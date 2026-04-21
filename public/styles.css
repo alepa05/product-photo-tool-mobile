@@ -19,7 +19,7 @@ body {
 
 .card {
   width: 100%;
-  max-width: 420px;
+  max-width: 430px;
   background: #ffffff;
   border-radius: 18px;
   padding: 24px;
@@ -27,14 +27,12 @@ body {
 }
 
 h1 {
-  margin-top: 0;
-  margin-bottom: 8px;
+  margin: 0 0 8px;
   font-size: 28px;
 }
 
 .sub {
-  margin-top: 0;
-  margin-bottom: 20px;
+  margin: 0 0 20px;
   color: #6b7280;
 }
 
@@ -45,7 +43,7 @@ h1 {
 }
 
 input[type="text"],
-input[type="file"] {
+input[type="email"] {
   width: 100%;
   padding: 12px;
   border: 1px solid #d1d5db;
@@ -53,11 +51,18 @@ input[type="file"] {
   background: #fff;
 }
 
+.button-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-top: 6px;
+}
+
+.secondary-button,
 button,
 a#downloadLink {
   display: inline-block;
   width: 100%;
-  margin-top: 18px;
   padding: 14px;
   border: 0;
   border-radius: 12px;
@@ -67,6 +72,20 @@ a#downloadLink {
   text-decoration: none;
   font-weight: 700;
   cursor: pointer;
+}
+
+.secondary-button {
+  background: #374151;
+}
+
+button {
+  margin-top: 18px;
+}
+
+.selected-file {
+  margin-top: 12px;
+  font-size: 14px;
+  color: #374151;
 }
 
 #status {
@@ -88,4 +107,9 @@ a#downloadLink {
 
 .hidden {
   display: none;
+}
+
+.visually-hidden {
+  position: absolute;
+  left: -9999px;
 }
