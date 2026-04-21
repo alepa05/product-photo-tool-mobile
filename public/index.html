@@ -1,1 +1,37 @@
+<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Packshot Automatico</title>
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <main class="wrap">
+    <div class="card">
+      <h1>Packshot Automatico</h1>
+      <p class="sub">Carica una foto e genera il file JPG.</p>
 
+      <form id="uploadForm">
+        <label class="label" for="codice">Codice articolo</label>
+        <input id="codice" name="codice" type="text" placeholder="Es. 0334415" required />
+
+        <label class="label" for="image">Foto prodotto</label>
+        <input id="image" name="image" type="file" accept="image/*" capture="environment" required />
+
+        <button type="submit">Carica e genera</button>
+      </form>
+
+      <p id="status"></p>
+
+      <div id="result" class="hidden">
+        <h2>Risultato</h2>
+        <img id="preview" alt="Anteprima risultato" />
+        <a id="downloadLink" download>Scarica JPG</a>
+      </div>
+    </div>
+  </main>
+
+  <script src="/app.js"></script>
+</body>
+</html>
