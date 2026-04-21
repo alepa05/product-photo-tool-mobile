@@ -100,19 +100,17 @@ async function removeBackgroundWithRemoveBg(inputPath) {
   return Buffer.from(arrayBuffer);
 }
 
-async function createShadowBuffer(productBuffer, width, height) {
-  const shadowBase = await sharp(productBuffer)
-    .resize(width, height, {
+async function createShadowBuffer(productBuffer) {
+  return await sharp(productBuffer)
+    .resize(1400, 1400, {
       fit: "contain",
       background: { r: 0, g: 0, b: 0, alpha: 0 }
     })
     .ensureAlpha()
-    .blur(18)
-    .modulate({ brightness: 0.35 })
+    .blur(10)
+    .modulate({ brightness: 0.5 })
     .png()
     .toBuffer();
-
-  return shadowBase;
 }
 
 app.get("/", (req, res) => {
@@ -145,13 +143,14 @@ app.post("/process", upload.single("image"), async (req, res) => {
       .normalize()
       .sharpen()
       .modulate({
-        brightness: 1.04,
-        saturation: 1.05
+        brightness: 1.08,
+        saturation: 1.12
       })
+      .gamma(1.1)
       .png()
       .toBuffer();
 
-    const shadowBuffer = await createShadowBuffer(productBuffer, 1400, 1400);
+    const shadowBuffer = await createShadowBuffer(productBuffer);
 
     await sharp({
       create: {
@@ -164,12 +163,12 @@ app.post("/process", upload.single("image"), async (req, res) => {
       .composite([
         {
           input: shadowBuffer,
-          top: 520,
+          top: 900,
           left: 300
         },
         {
           input: productBuffer,
-          top: 220,
+          top: 200,
           left: 200
         }
       ])
