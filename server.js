@@ -4,44 +4,57 @@ const fs = require("fs");
 const path = require("path");
 
 const app = express();
-const upload = multer({ dest: "uploads/" });
 
+// Cartelle
+const upload = multer({ dest: "uploads/" });
+const OUTPUT_DIR = "output";
+
+// Crea cartella output se non esiste
+if (!fs.existsSync(OUTPUT_DIR)) {
+  fs.mkdirSync(OUTPUT_DIR);
+}
+
+// Porta (Render usa process.env.PORT)
 const PORT = process.env.PORT || 3000;
+
+// 🔑 API KEY (presa da Render env variables)
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 
-// Serve file statici (frontend)
+// Serve frontend
 app.use(express.static("public"));
 
-// Endpoint upload + finto processing (placeholder)
+// Home
+app.get("/", (req, res) => {
+  res.sendFile(path.join(__dirname, "public/index.html"));
+});
+
+// Upload immagine
 app.post("/upload", upload.single("image"), async (req, res) => {
   try {
-    const file = req.file;
-    const codice = req.body.codice || "output";
+    const filePath = req.file.path;
 
-    if (!file) {
-      return res.status(400).send("Nessun file caricato");
-    }
+    // Simulazione processing (qui poi collegheremo OpenAI)
+    const outputPath = path.join(
+      OUTPUT_DIR,
+      "processed-" + Date.now() + ".jpg"
+    );
 
-    const inputPath = file.path;
-    const outputFileName = `${codice}.jpg`;
-    const outputPath = path.join("output", outputFileName);
+    fs.copyFileSync(filePath, outputPath);
 
-    // 👉 QUI simuliamo la lavorazione (copiamo il file)
-    fs.copyFileSync(inputPath, outputPath);
-
-    // elimina file temporaneo
-    fs.unlinkSync(inputPath);
-
-    // restituisce file finale
-    res.download(outputPath);
-
+    res.json({
+      success: true,
+      image: "/" + outputPath,
+    });
   } catch (err) {
     console.error(err);
-    res.status(500).send("Errore durante l'elaborazione");
+    res.status(500).json({ error: "Errore upload" });
   }
 });
 
-// Avvio server
+// Serve immagini output
+app.use("/output", express.static("output"));
+
+// Start server
 app.listen(PORT, () => {
-  console.log(`Server attivo su porta ${PORT}`);
+  console.log("Server attivo su porta " + PORT);
 });
