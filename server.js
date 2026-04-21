@@ -3,7 +3,7 @@ const multer = require("multer");
 const fs = require("fs");
 const path = require("path");
 const nodemailer = require("nodemailer");
-const { execFile } = require("child_process");
+const sharp = require("sharp");
 
 const app = express();
 
@@ -45,6 +45,7 @@ function createTransporter() {
 
 async function sendEmailWithAttachment({ to, subject, text, filePath, filename }) {
   const transporter = createTransporter();
+
   if (!transporter) {
     return { sent: false, reason: "Gmail non configurata sul server" };
   }
@@ -65,21 +66,38 @@ async function sendEmailWithAttachment({ to, subject, text, filePath, filename }
   return { sent: true };
 }
 
-function runBackgroundRemoval(inputPath, outputPath) {
-  return new Promise((resolve, reject) => {
-    execFile(
-      "python",
-      ["remove_bg.py", inputPath, outputPath],
-      { cwd: __dirname },
-      (error, stdout, stderr) => {
-        if (error) {
-          reject(new Error(stderr || error.message));
-          return;
-        }
-        resolve(stdout.trim());
-      }
-    );
+async function removeBackgroundWithRemoveBg(inputPath) {
+  const apiKey = process.env.REMOVE_BG_API_KEY;
+
+  if (!apiKey) {
+    throw new Error("REMOVE_BG_API_KEY mancante");
+  }
+
+  const fileBuffer = fs.readFileSync(inputPath);
+
+  const formData = new FormData();
+  formData.append("size", "auto");
+  formData.append(
+    "image_file",
+    new Blob([fileBuffer], { type: "image/jpeg" }),
+    "upload.jpg"
+  );
+
+  const response = await fetch("https://api.remove.bg/v1.0/removebg", {
+    method: "POST",
+    headers: {
+      "X-Api-Key": apiKey
+    },
+    body: formData
   });
+
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(`remove.bg error ${response.status}: ${text}`);
+  }
+
+  const arrayBuffer = await response.arrayBuffer();
+  return Buffer.from(arrayBuffer);
 }
 
 app.get("/", (req, res) => {
@@ -99,11 +117,17 @@ app.post("/process", upload.single("image"), async (req, res) => {
   const outputPath = path.join(OUTPUT_DIR, outputFilename);
 
   try {
-    await runBackgroundRemoval(tempFile.path, outputPath);
+    const noBgPngBuffer = await removeBackgroundWithRemoveBg(tempFile.path);
+
+    await sharp(noBgPngBuffer)
+      .rotate()
+      .flatten({ background: "#ffffff" })
+      .jpeg({ quality: 92, mozjpeg: true })
+      .toFile(outputPath);
 
     fs.unlink(tempFile.path, () => {});
 
-    let emailResult = { sent: false };
+    let emailResult = { sent: false, reason: "Nessuna email richiesta" };
 
     if (recipientEmail) {
       emailResult = await sendEmailWithAttachment({
@@ -122,7 +146,7 @@ app.post("/process", upload.single("image"), async (req, res) => {
       emailed: emailResult.sent,
       emailMessage: emailResult.sent
         ? `Email inviata a ${recipientEmail}`
-        : (recipientEmail ? emailResult.reason : "Nessuna email richiesta")
+        : emailResult.reason
     });
   } catch (error) {
     console.error("Errore processing:", error);
