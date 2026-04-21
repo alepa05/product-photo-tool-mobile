@@ -2,8 +2,8 @@ const express = require("express");
 const multer = require("multer");
 const fs = require("fs");
 const path = require("path");
-const sharp = require("sharp");
 const nodemailer = require("nodemailer");
+const { execFile } = require("child_process");
 
 const app = express();
 
@@ -35,16 +35,11 @@ function createTransporter() {
   const user = process.env.GMAIL_USER;
   const pass = process.env.GMAIL_APP_PASSWORD;
 
-  if (!user || !pass) {
-    return null;
-  }
+  if (!user || !pass) return null;
 
   return nodemailer.createTransport({
     service: "gmail",
-    auth: {
-      user,
-      pass
-    }
+    auth: { user, pass }
   });
 }
 
@@ -70,6 +65,23 @@ async function sendEmailWithAttachment({ to, subject, text, filePath, filename }
   return { sent: true };
 }
 
+function runBackgroundRemoval(inputPath, outputPath) {
+  return new Promise((resolve, reject) => {
+    execFile(
+      "python",
+      ["remove_bg.py", inputPath, outputPath],
+      { cwd: __dirname },
+      (error, stdout, stderr) => {
+        if (error) {
+          reject(new Error(stderr || error.message));
+          return;
+        }
+        resolve(stdout.trim());
+      }
+    );
+  });
+}
+
 app.get("/", (req, res) => {
   res.sendFile(path.join(__dirname, "public", "index.html"));
 });
@@ -83,20 +95,11 @@ app.post("/process", upload.single("image"), async (req, res) => {
     return res.status(400).json({ success: false, error: "Nessuna immagine caricata." });
   }
 
-  if (!codice) {
-    fs.unlink(tempFile.path, () => {});
-    return res.status(400).json({ success: false, error: "Codice articolo mancante." });
-  }
-
   const outputFilename = `${codice}.jpg`;
   const outputPath = path.join(OUTPUT_DIR, outputFilename);
 
   try {
-    // Conversione reale a JPEG
-    await sharp(tempFile.path)
-  .rotate()
-  .jpeg({ quality: 92, mozjpeg: true })
-  .toFile(outputPath);
+    await runBackgroundRemoval(tempFile.path, outputPath);
 
     fs.unlink(tempFile.path, () => {});
 
@@ -126,11 +129,11 @@ app.post("/process", upload.single("image"), async (req, res) => {
     fs.unlink(tempFile.path, () => {});
     return res.status(500).json({
       success: false,
-      error: "Errore durante la creazione del JPEG."
+      error: "Errore durante lo scontorno automatico."
     });
   }
 });
 
 app.listen(PORT, () => {
-  console.log(`Server attivo su porta ${PORT}`);
+  console.log("Server attivo su porta " + PORT);
 });
