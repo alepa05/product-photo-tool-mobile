@@ -100,6 +100,21 @@ async function removeBackgroundWithRemoveBg(inputPath) {
   return Buffer.from(arrayBuffer);
 }
 
+async function createShadowBuffer(productBuffer, width, height) {
+  const shadowBase = await sharp(productBuffer)
+    .resize(width, height, {
+      fit: "contain",
+      background: { r: 0, g: 0, b: 0, alpha: 0 }
+    })
+    .ensureAlpha()
+    .blur(18)
+    .modulate({ brightness: 0.35 })
+    .png()
+    .toBuffer();
+
+  return shadowBase;
+}
+
 app.get("/", (req, res) => {
   res.sendFile(path.join(__dirname, "public", "index.html"));
 });
@@ -119,9 +134,45 @@ app.post("/process", upload.single("image"), async (req, res) => {
   try {
     const noBgPngBuffer = await removeBackgroundWithRemoveBg(tempFile.path);
 
-    await sharp(noBgPngBuffer)
+    const canvasSize = 2000;
+
+    const productBuffer = await sharp(noBgPngBuffer)
       .rotate()
-      .flatten({ background: "#ffffff" })
+      .resize(1600, 1600, {
+        fit: "contain",
+        background: { r: 255, g: 255, b: 255, alpha: 0 }
+      })
+      .normalize()
+      .sharpen()
+      .modulate({
+        brightness: 1.04,
+        saturation: 1.05
+      })
+      .png()
+      .toBuffer();
+
+    const shadowBuffer = await createShadowBuffer(productBuffer, 1400, 1400);
+
+    await sharp({
+      create: {
+        width: canvasSize,
+        height: canvasSize,
+        channels: 3,
+        background: { r: 255, g: 255, b: 255 }
+      }
+    })
+      .composite([
+        {
+          input: shadowBuffer,
+          top: 520,
+          left: 300
+        },
+        {
+          input: productBuffer,
+          top: 220,
+          left: 200
+        }
+      ])
       .jpeg({ quality: 92, mozjpeg: true })
       .toFile(outputPath);
 
@@ -153,7 +204,7 @@ app.post("/process", upload.single("image"), async (req, res) => {
     fs.unlink(tempFile.path, () => {});
     return res.status(500).json({
       success: false,
-      error: "Errore durante lo scontorno automatico."
+      error: "Errore durante l'elaborazione automatica."
     });
   }
 });
