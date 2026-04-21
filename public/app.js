@@ -11,23 +11,14 @@ const downloadLink = document.getElementById("downloadLink");
 
 let selectedImage = null;
 
-
-// 📸 PREVIEW IMMEDIATA
 function showPreview(file) {
   if (!file) return;
 
-  const reader = new FileReader();
-
-  reader.onload = function (e) {
-    previewUpload.src = e.target.result;
-    previewUpload.classList.remove("hidden");
-  };
-
-  reader.readAsDataURL(file);
+  const objectUrl = URL.createObjectURL(file);
+  previewUpload.src = objectUrl;
+  previewUpload.classList.remove("hidden");
 }
 
-
-// 📸 CAMERA
 cameraInput.addEventListener("change", (e) => {
   const file = e.target.files[0];
   if (!file) return;
@@ -37,8 +28,6 @@ cameraInput.addEventListener("change", (e) => {
   showPreview(file);
 });
 
-
-// 📁 FILE
 fileInput.addEventListener("change", (e) => {
   const file = e.target.files[0];
   if (!file) return;
@@ -48,8 +37,6 @@ fileInput.addEventListener("change", (e) => {
   showPreview(file);
 });
 
-
-// 🚀 SUBMIT
 form.addEventListener("submit", async (e) => {
   e.preventDefault();
 
@@ -80,9 +67,7 @@ form.addEventListener("submit", async (e) => {
     if (data.success) {
       status.textContent = "JPG creato e inviato via Gmail.";
 
-      // 🔥 FIX CACHE
       const cacheBuster = `?t=${Date.now()}`;
-
       preview.src = data.image + cacheBuster;
       downloadLink.href = data.image + cacheBuster;
       downloadLink.download = `${codice}.png`;
@@ -91,7 +76,6 @@ form.addEventListener("submit", async (e) => {
     } else {
       status.textContent = data.error || "Errore";
     }
-
   } catch (err) {
     status.textContent = "Errore di connessione";
   }
