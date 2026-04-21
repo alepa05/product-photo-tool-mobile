@@ -1,0 +1,3 @@
+OPENAI_API_KEY=sk-...
+PORT=3000
+OPENAI_IMAGE_MODEL=gpt-image-2
