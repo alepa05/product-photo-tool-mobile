@@ -1,7 +1,7 @@
 {
   "name": "product-photo-tool-mobile",
   "version": "1.0.0",
-  "description": "Tool mobile per foto prodotto con remove.bg e Gmail",
+  "description": "Tool mobile per foto prodotto con remove.bg, sharp e Gmail",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"
