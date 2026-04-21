@@ -1,213 +1,130 @@
-const express = require("express");
-const multer = require("multer");
-const fs = require("fs");
-const path = require("path");
-const nodemailer = require("nodemailer");
-const sharp = require("sharp");
+const express = require('express');
+const multer = require('multer');
+const cors = require('cors');
+const axios = require('axios');
+const FormData = require('form-data');
+const sharp = require('sharp');
+const nodemailer = require('nodemailer');
 
 const app = express();
-
-const UPLOAD_DIR = path.join(__dirname, "uploads");
-const OUTPUT_DIR = path.join(__dirname, "output");
-
-for (const dir of [UPLOAD_DIR, OUTPUT_DIR]) {
-  if (!fs.existsSync(dir)) {
-    fs.mkdirSync(dir, { recursive: true });
-  }
-}
-
-const upload = multer({ dest: UPLOAD_DIR });
-const PORT = process.env.PORT || 3000;
-
-app.use(express.static(path.join(__dirname, "public")));
-app.use("/output", express.static(OUTPUT_DIR));
+app.use(cors());
 app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
 
-function sanitizeFilename(value) {
-  return String(value || "output")
-    .trim()
-    .replace(/[^\w\-]+/g, "_")
-    .replace(/^_+|_+$/g, "") || "output";
+const upload = multer({ storage: multer.memoryStorage() });
+
+
+// 📸 FUNZIONE REMOVE.BG
+async function removeBackground(buffer) {
+  const formData = new FormData();
+  formData.append('image_file', buffer, 'image.jpg');
+  formData.append('size', 'auto');
+
+  const response = await axios.post(
+    'https://api.remove.bg/v1.0/removebg',
+    formData,
+    {
+      headers: {
+        ...formData.getHeaders(),
+        'X-Api-Key': process.env.REMOVE_BG_API_KEY
+      },
+      responseType: 'arraybuffer'
+    }
+  );
+
+  return response.data;
 }
 
-function createTransporter() {
-  const user = process.env.GMAIL_USER;
-  const pass = process.env.GMAIL_APP_PASSWORD;
 
-  if (!user || !pass) return null;
+// 🎨 MIGLIORAMENTO IMMAGINE + OMBRA
+async function improveImage(buffer) {
+  const image = sharp(buffer);
 
-  return nodemailer.createTransport({
-    service: "gmail",
-    auth: { user, pass }
+  const metadata = await image.metadata();
+
+  const resized = await image
+    .resize(800, 800, { fit: 'contain', background: { r: 255, g: 255, b: 255, alpha: 0 } })
+    .png()
+    .toBuffer();
+
+  const shadow = await sharp(resized)
+    .blur(10)
+    .modulate({ brightness: 0.5 })
+    .toBuffer();
+
+  const final = await sharp({
+    create: {
+      width: 1000,
+      height: 1000,
+      channels: 4,
+      background: { r: 255, g: 255, b: 255, alpha: 1 }
+    }
+  })
+    .composite([
+      { input: shadow, top: 120, left: 100 },
+      { input: resized, top: 80, left: 100 }
+    ])
+    .jpeg({ quality: 90 })
+    .toBuffer();
+
+  return final;
+}
+
+
+// 📧 INVIO EMAIL
+async function sendEmail(buffer, filename, email) {
+  const transporter = nodemailer.createTransport({
+    service: 'gmail',
+    auth: {
+      user: process.env.EMAIL_USER,
+      pass: process.env.EMAIL_PASS
+    }
   });
-}
-
-async function sendEmailWithAttachment({ to, subject, text, filePath, filename }) {
-  const transporter = createTransporter();
-
-  if (!transporter) {
-    return { sent: false, reason: "Gmail non configurata sul server" };
-  }
 
   await transporter.sendMail({
-    from: process.env.GMAIL_USER,
-    to,
-    subject,
-    text,
+    from: process.env.EMAIL_USER,
+    to: email,
+    subject: 'Packshot automatico',
+    text: 'Ecco la tua immagine.',
     attachments: [
       {
         filename,
-        path: filePath
+        content: buffer
       }
     ]
   });
-
-  return { sent: true };
 }
 
-async function removeBackgroundWithRemoveBg(inputPath) {
-  const apiKey = process.env.REMOVE_BG_API_KEY;
 
-  if (!apiKey) {
-    throw new Error("REMOVE_BG_API_KEY mancante");
-  }
-
-  const fileBuffer = fs.readFileSync(inputPath);
-
-  const formData = new FormData();
-  formData.append("size", "auto");
-  formData.append(
-    "image_file",
-    new Blob([fileBuffer], { type: "image/jpeg" }),
-    "upload.jpg"
-  );
-
-  const response = await fetch("https://api.remove.bg/v1.0/removebg", {
-    method: "POST",
-    headers: {
-      "X-Api-Key": apiKey
-    },
-    body: formData
-  });
-
-  if (!response.ok) {
-    const text = await response.text();
-    throw new Error(`remove.bg error ${response.status}: ${text}`);
-  }
-
-  const arrayBuffer = await response.arrayBuffer();
-  return Buffer.from(arrayBuffer);
-}
-
-async function createShadowBuffer(productBuffer) {
-  return await sharp(productBuffer)
-    .resize(1400, 1400, {
-      fit: "contain",
-      background: { r: 0, g: 0, b: 0, alpha: 0 }
-    })
-    .ensureAlpha()
-    .blur(10)
-    .modulate({ brightness: 0.5 })
-    .png()
-    .toBuffer();
-}
-
-app.get("/", (req, res) => {
-  res.sendFile(path.join(__dirname, "public", "index.html"));
-});
-
-app.post("/process", upload.single("image"), async (req, res) => {
-  const tempFile = req.file;
-  const codice = sanitizeFilename(req.body.codice);
-  const recipientEmail = String(req.body.email || "").trim();
-
-  if (!tempFile) {
-    return res.status(400).json({ success: false, error: "Nessuna immagine caricata." });
-  }
-
-  const outputFilename = `${codice}.jpg`;
-  const outputPath = path.join(OUTPUT_DIR, outputFilename);
-
+// 🚀 ROUTE PRINCIPALE
+app.post('/upload', upload.single('image'), async (req, res) => {
   try {
-    const noBgPngBuffer = await removeBackgroundWithRemoveBg(tempFile.path);
+    const codice = req.body.codice;
+    const email = req.body.email;
+    const fileBuffer = req.file.buffer;
 
-    const canvasSize = 2000;
+    // 1. rimuovi sfondo
+    const noBg = await removeBackground(fileBuffer);
 
-    const productBuffer = await sharp(noBgPngBuffer)
-      .rotate()
-      .resize(1600, 1600, {
-        fit: "contain",
-        background: { r: 255, g: 255, b: 255, alpha: 0 }
-      })
-      .normalize()
-      .sharpen()
-      .modulate({
-        brightness: 1.08,
-        saturation: 1.12
-      })
-      .gamma(1.1)
-      .png()
-      .toBuffer();
+    // 2. migliora immagine
+    const finalImage = await improveImage(noBg);
 
-    const shadowBuffer = await createShadowBuffer(productBuffer);
+    const filename = `${codice}.jpg`;
 
-    await sharp({
-      create: {
-        width: canvasSize,
-        height: canvasSize,
-        channels: 3,
-        background: { r: 255, g: 255, b: 255 }
-      }
-    })
-      .composite([
-        {
-          input: shadowBuffer,
-          top: 900,
-          left: 300
-        },
-        {
-          input: productBuffer,
-          top: 200,
-          left: 200
-        }
-      ])
-      .jpeg({ quality: 92, mozjpeg: true })
-      .toFile(outputPath);
+    // 3. invia email
+    await sendEmail(finalImage, filename, email);
 
-    fs.unlink(tempFile.path, () => {});
-
-    let emailResult = { sent: false, reason: "Nessuna email richiesta" };
-
-    if (recipientEmail) {
-      emailResult = await sendEmailWithAttachment({
-        to: recipientEmail,
-        subject: `File prodotto ${codice}`,
-        text: `In allegato trovi il file ${outputFilename}.`,
-        filePath: outputPath,
-        filename: outputFilename
-      });
-    }
-
-    return res.json({
+    res.json({
       success: true,
-      imageUrl: `/output/${outputFilename}`,
-      filename: outputFilename,
-      emailed: emailResult.sent,
-      emailMessage: emailResult.sent
-        ? `Email inviata a ${recipientEmail}`
-        : emailResult.reason
+      image: `data:image/jpeg;base64,${finalImage.toString('base64')}`
     });
+
   } catch (error) {
-    console.error("Errore processing:", error);
-    fs.unlink(tempFile.path, () => {});
-    return res.status(500).json({
-      success: false,
-      error: "Errore durante l'elaborazione automatica."
-    });
+    console.error(error);
+    res.status(500).json({ error: 'Errore durante elaborazione' });
   }
 });
 
-app.listen(PORT, () => {
-  console.log("Server attivo su porta " + PORT);
+
+app.listen(10000, () => {
+  console.log('Server attivo su porta 10000');
 });
