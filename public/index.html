@@ -10,16 +10,39 @@
   <main class="wrap">
     <div class="card">
       <h1>Packshot Automatico</h1>
-      <p class="sub">Carica una foto e genera il file JPG.</p>
+      <p class="sub">Scatta o carica una foto, genera il JPG e invialo via Gmail.</p>
 
       <form id="uploadForm">
         <label class="label" for="codice">Codice articolo</label>
         <input id="codice" name="codice" type="text" placeholder="Es. 0334415" required />
 
-        <label class="label" for="image">Foto prodotto</label>
-        <input id="image" name="image" type="file" accept="image/*" capture="environment" required />
+        <label class="label" for="email">Email destinatario</label>
+        <input id="email" name="email" type="email" placeholder="esempio@gmail.com" required />
 
-        <button type="submit">Carica e genera</button>
+        <label class="label">Foto prodotto</label>
+        <div class="button-row">
+          <label class="secondary-button" for="cameraInput">Scatta foto</label>
+          <label class="secondary-button" for="fileInput">Scegli file</label>
+        </div>
+
+        <input
+          id="cameraInput"
+          class="visually-hidden"
+          type="file"
+          accept="image/*"
+          capture="environment"
+        />
+
+        <input
+          id="fileInput"
+          class="visually-hidden"
+          type="file"
+          accept="image/*"
+        />
+
+        <div id="selectedFile" class="selected-file">Nessun file selezionato</div>
+
+        <button type="submit">Genera e invia</button>
       </form>
 
       <p id="status"></p>
