@@ -1,9 +1,13 @@
 {
-  "name": "Packshot Automatico",
-  "short_name": "Packshot",
-  "start_url": "/",
-  "display": "standalone",
-  "background_color": "#f3f4f6",
-  "theme_color": "#111827",
-  "icons": []
+  "name": "product-photo-tool-mobile",
+  "version": "1.0.0",
+  "description": "Tool mobile per foto prodotto",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.21.2",
+    "multer": "^1.4.5-lts.1"
+  }
 }
