@@ -20,6 +20,7 @@
         <input id="email" name="email" type="email" placeholder="esempio@gmail.com" required />
 
         <label class="label">Foto prodotto</label>
+
         <div class="button-row">
           <label class="secondary-button" for="cameraInput">Scatta foto</label>
           <label class="secondary-button" for="fileInput">Scegli file</label>
@@ -29,7 +30,7 @@
           id="cameraInput"
           class="visually-hidden"
           type="file"
-          accept="image/*"
+          accept="image/jpeg,image/png"
           capture="environment"
         />
 
@@ -37,7 +38,7 @@
           id="fileInput"
           class="visually-hidden"
           type="file"
-          accept="image/*"
+          accept="image/jpeg,image/png"
         />
 
         <div id="selectedFile" class="selected-file">Nessun file selezionato</div>
