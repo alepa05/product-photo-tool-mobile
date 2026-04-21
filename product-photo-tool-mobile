@@ -1,0 +1,298 @@
+<!doctype html>
+<html lang="it">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>Packshot Automatico</title>
+    <meta name="theme-color" content="#111827" />
+    <link rel="manifest" href="/manifest.json" />
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <main class="app-shell">
+      <section class="card hero-card">
+        <div class="badge">Versione smartphone</div>
+        <h1>Packshot Automatico</h1>
+        <p class="subtitle">
+          Carica una foto del prodotto, inserisci il codice articolo e genera un JPEG con sfondo bianco, luci e ombre.
+        </p>
+      </section>
+
+      <section class="card form-card">
+        <form id="packshotForm">
+          <label class="field">
+            <span>Codice articolo</span>
+            <input
+              id="articleCode"
+              name="articleCode"
+              type="text"
+              inputmode="text"
+              autocomplete="off"
+              placeholder="Es. 0334415"
+              required
+            />
+          </label>
+
+          <label class="field file-field">
+            <span>Foto prodotto</span>
+            <input
+              id="image"
+              name="image"
+              type="file"
+              accept="image/*"
+              capture="environment"
+              required
+            />
+            <small>Puoi scattare direttamente dalla fotocamera o scegliere una foto dalla galleria.</small>
+          </label>
+
+          <div id="previewWrap" class="preview-wrap hidden">
+            <img id="preview" alt="Anteprima foto caricata" />
+          </div>
+
+          <button id="submitBtn" type="submit">Genera JPEG</button>
+        </form>
+      </section>
+
+      <section id="statusCard" class="card status-card hidden" aria-live="polite">
+        <div id="statusText">In attesa...</div>
+      </section>
+
+      <section id="resultCard" class="card result-card hidden">
+        <h2>File pronto</h2>
+        <p id="resultText"></p>
+        <a id="downloadLink" class="download-btn" href="#" download>Scarica JPEG</a>
+      </section>
+    </main>
+
+    <script src="/app.js"></script>
+  </body>
+</html>
+
+const form = document.getElementById('packshotForm');
+const imageInput = document.getElementById('image');
+const previewWrap = document.getElementById('previewWrap');
+const preview = document.getElementById('preview');
+const submitBtn = document.getElementById('submitBtn');
+const statusCard = document.getElementById('statusCard');
+const statusText = document.getElementById('statusText');
+const resultCard = document.getElementById('resultCard');
+const resultText = document.getElementById('resultText');
+const downloadLink = document.getElementById('downloadLink');
+
+imageInput.addEventListener('change', () => {
+  const file = imageInput.files?.[0];
+  if (!file) {
+    previewWrap.classList.add('hidden');
+    preview.removeAttribute('src');
+    return;
+  }
+
+  const reader = new FileReader();
+  reader.onload = () => {
+    preview.src = reader.result;
+    previewWrap.classList.remove('hidden');
+  };
+  reader.readAsDataURL(file);
+});
+
+function setStatus(message, visible = true) {
+  statusText.textContent = message;
+  statusCard.classList.toggle('hidden', !visible);
+}
+
+form.addEventListener('submit', async (event) => {
+  event.preventDefault();
+  resultCard.classList.add('hidden');
+
+  const articleCode = document.getElementById('articleCode').value.trim();
+  const imageFile = imageInput.files?.[0];
+
+  if (!articleCode || !imageFile) {
+    setStatus('Inserisci il codice articolo e seleziona una foto.', true);
+    return;
+  }
+
+  const formData = new FormData();
+  formData.append('articleCode', articleCode);
+  formData.append('image', imageFile);
+
+  submitBtn.disabled = true;
+  setStatus('Sto creando il packshot. Da smartphone può richiedere alcuni secondi...', true);
+
+  try {
+    const response = await fetch('/api/process', {
+      method: 'POST',
+      body: formData,
+    });
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      throw new Error(data.error || 'Errore imprevisto.');
+    }
+
+    setStatus('Elaborazione completata.', true);
+    resultText.textContent = `File creato: ${data.fileName}`;
+    downloadLink.href = data.downloadUrl;
+    downloadLink.setAttribute('download', data.fileName);
+    resultCard.classList.remove('hidden');
+  } catch (error) {
+    setStatus(`Errore: ${error.message}`, true);
+  } finally {
+    submitBtn.disabled = false;
+  }
+});
+
+:root {
+  --bg: #f3f4f6;
+  --card: #ffffff;
+  --text: #111827;
+  --muted: #6b7280;
+  --line: #e5e7eb;
+  --accent: #111827;
+  --accent-2: #2563eb;
+  --success: #065f46;
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; }
+body {
+  font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  background: linear-gradient(180deg, #eef2ff 0%, var(--bg) 20%, var(--bg) 100%);
+  color: var(--text);
+}
+
+.app-shell {
+  max-width: 560px;
+  margin: 0 auto;
+  padding: 18px 14px 28px;
+}
+
+.card {
+  background: var(--card);
+  border: 1px solid rgba(17, 24, 39, 0.06);
+  border-radius: 22px;
+  padding: 18px;
+  box-shadow: 0 12px 40px rgba(17, 24, 39, 0.08);
+  margin-bottom: 14px;
+}
+
+.hero-card h1 {
+  font-size: 1.7rem;
+  margin: 8px 0 6px;
+}
+
+.subtitle {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+.badge {
+  display: inline-flex;
+  padding: 8px 12px;
+  border-radius: 999px;
+  background: #eef2ff;
+  color: #3730a3;
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.field {
+  display: block;
+  margin-bottom: 16px;
+}
+
+.field span {
+  display: block;
+  font-weight: 700;
+  margin-bottom: 8px;
+}
+
+input[type="text"],
+input[type="file"] {
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 14px 14px;
+  font-size: 16px;
+  background: #fff;
+}
+
+.file-field small {
+  display: block;
+  margin-top: 8px;
+  color: var(--muted);
+  line-height: 1.35;
+}
+
+button,
+.download-btn {
+  display: inline-flex;
+  width: 100%;
+  justify-content: center;
+  align-items: center;
+  min-height: 52px;
+  border: 0;
+  border-radius: 16px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 1rem;
+  font-weight: 700;
+  text-decoration: none;
+  padding: 14px 18px;
+}
+
+button:disabled {
+  opacity: 0.6;
+}
+
+.preview-wrap {
+  margin: 6px 0 16px;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  overflow: hidden;
+  background: #f9fafb;
+}
+
+.preview-wrap img {
+  width: 100%;
+  display: block;
+  max-height: 360px;
+  object-fit: contain;
+}
+
+.status-card {
+  border-left: 6px solid var(--accent-2);
+}
+
+.result-card h2 {
+  margin-top: 0;
+  margin-bottom: 8px;
+}
+
+.result-card p {
+  color: var(--success);
+  font-weight: 600;
+}
+
+.hidden {
+  display: none;
+}
+
+@media (min-width: 700px) {
+  .app-shell {
+    padding-top: 28px;
+  }
+}
+
+{
+  "name": "Packshot Automatico",
+  "short_name": "Packshot",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f3f4f6",
+  "theme_color": "#111827",
+  "icons": []
+}
