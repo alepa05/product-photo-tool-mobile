@@ -1,29 +1,28 @@
 const express = require("express");
 const multer = require("multer");
-const cors = require("cors");
-const axios = require("axios");
-const FormData = require("form-data");
-const nodemailer = require("nodemailer");
-const sharp = require("sharp");
 const fs = require("fs");
 const path = require("path");
+const nodemailer = require("nodemailer");
+const sharp = require("sharp");
 
 const app = express();
 
-app.use(cors());
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
-app.use(express.static(path.join(__dirname, "public")));
-
+const UPLOAD_DIR = path.join(__dirname, "uploads");
 const OUTPUT_DIR = path.join(__dirname, "output");
-if (!fs.existsSync(OUTPUT_DIR)) {
-  fs.mkdirSync(OUTPUT_DIR, { recursive: true });
+
+for (const dir of [UPLOAD_DIR, OUTPUT_DIR]) {
+  if (!fs.existsSync(dir)) {
+    fs.mkdirSync(dir, { recursive: true });
+  }
 }
 
-app.use("/output", express.static(OUTPUT_DIR));
+const upload = multer({ dest: UPLOAD_DIR });
+const PORT = process.env.PORT || 3000;
 
-const upload = multer({ storage: multer.memoryStorage() });
-const PORT = process.env.PORT || 10000;
+app.use(express.static(path.join(__dirname, "public")));
+app.use("/output", express.static(OUTPUT_DIR));
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
 
 function sanitizeFilename(value) {
   return String(value || "output")
@@ -32,50 +31,15 @@ function sanitizeFilename(value) {
     .replace(/^_+|_+$/g, "") || "output";
 }
 
-async function removeBackground(buffer, mimetype = "image/jpeg") {
-  const apiKey = process.env.REMOVE_BG_API_KEY;
-
-  if (!apiKey) {
-    throw new Error("REMOVE_BG_API_KEY mancante");
-  }
-
-  const formData = new FormData();
-  formData.append("image_file", buffer, {
-    filename: "image.jpg",
-    contentType: mimetype
-  });
-  formData.append("size", "auto");
-
-  const response = await axios.post(
-    "https://api.remove.bg/v1.0/removebg",
-    formData,
-    {
-      headers: {
-        ...formData.getHeaders(),
-        "X-Api-Key": apiKey
-      },
-      responseType: "arraybuffer",
-      maxBodyLength: Infinity
-    }
-  );
-
-  return Buffer.from(response.data);
-}
-
 function createTransporter() {
   const user = process.env.GMAIL_USER;
   const pass = process.env.GMAIL_APP_PASSWORD;
 
-  if (!user || !pass) {
-    return null;
-  }
+  if (!user || !pass) return null;
 
   return nodemailer.createTransport({
     service: "gmail",
-    auth: {
-      user,
-      pass
-    }
+    auth: { user, pass }
   });
 }
 
@@ -102,44 +66,72 @@ async function sendEmailWithAttachment({ to, subject, text, filePath, filename }
   return { sent: true };
 }
 
+async function removeBackgroundWithRemoveBg(inputPath) {
+  const apiKey = process.env.REMOVE_BG_API_KEY;
+
+  if (!apiKey) {
+    throw new Error("REMOVE_BG_API_KEY mancante");
+  }
+
+  const fileBuffer = fs.readFileSync(inputPath);
+
+  const formData = new FormData();
+  formData.append("size", "auto");
+  formData.append(
+    "image_file",
+    new Blob([fileBuffer], { type: "image/jpeg" }),
+    "upload.jpg"
+  );
+
+  const response = await fetch("https://api.remove.bg/v1.0/removebg", {
+    method: "POST",
+    headers: {
+      "X-Api-Key": apiKey
+    },
+    body: formData
+  });
+
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(`remove.bg error ${response.status}: ${text}`);
+  }
+
+  const arrayBuffer = await response.arrayBuffer();
+  return Buffer.from(arrayBuffer);
+}
+
 app.get("/", (req, res) => {
   res.sendFile(path.join(__dirname, "public", "index.html"));
 });
 
 app.post("/process", upload.single("image"), async (req, res) => {
+  const tempFile = req.file;
+  const codice = sanitizeFilename(req.body.codice);
+  const recipientEmail = String(req.body.email || "").trim();
+
+  if (!tempFile) {
+    return res.status(400).json({ success: false, error: "Nessuna immagine caricata." });
+  }
+
+  const outputFilename = `${codice}.jpg`;
+  const outputPath = path.join(OUTPUT_DIR, outputFilename);
+
   try {
-    const codice = sanitizeFilename(req.body.codice);
-    const email = String(req.body.email || "").trim();
-    const file = req.file;
+    const noBgPngBuffer = await removeBackgroundWithRemoveBg(tempFile.path);
 
-    if (!file) {
-      return res.status(400).json({
-        success: false,
-        error: "Nessuna immagine caricata."
-      });
-    }
-
-    const noBgBuffer = await removeBackground(file.buffer, file.mimetype);
-
-    const outputFilename = `${codice}.jpg`;
-    const outputPath = path.join(OUTPUT_DIR, outputFilename);
-
-    // SOLO SCONTORNO + SFONDO BIANCO + JPG
-    await sharp(noBgBuffer)
+    await sharp(noBgPngBuffer)
       .rotate()
-      .resize(1800, 1800, {
-        fit: "contain",
-        background: { r: 255, g: 255, b: 255, alpha: 0 }
-      })
       .flatten({ background: "#ffffff" })
       .jpeg({ quality: 92, mozjpeg: true })
       .toFile(outputPath);
 
+    fs.unlink(tempFile.path, () => {});
+
     let emailResult = { sent: false, reason: "Nessuna email richiesta" };
 
-    if (email) {
+    if (recipientEmail) {
       emailResult = await sendEmailWithAttachment({
-        to: email,
+        to: recipientEmail,
         subject: `File prodotto ${codice}`,
         text: `In allegato trovi il file ${outputFilename}.`,
         filePath: outputPath,
@@ -153,18 +145,19 @@ app.post("/process", upload.single("image"), async (req, res) => {
       filename: outputFilename,
       emailed: emailResult.sent,
       emailMessage: emailResult.sent
-        ? `Email inviata a ${email}`
+        ? `Email inviata a ${recipientEmail}`
         : emailResult.reason
     });
   } catch (error) {
-    console.error("Errore processing:", error.response?.data || error.message || error);
+    console.error("Errore processing:", error);
+    fs.unlink(tempFile.path, () => {});
     return res.status(500).json({
       success: false,
-      error: "Errore durante l'elaborazione automatica."
+      error: "Errore durante lo scontorno automatico."
     });
   }
 });
 
 app.listen(PORT, () => {
-  console.log(`Server attivo su porta ${PORT}`);
+  console.log("Server attivo su porta " + PORT);
 });
