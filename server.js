@@ -94,8 +94,9 @@ app.post("/process", upload.single("image"), async (req, res) => {
   try {
     // Conversione reale a JPEG
     await sharp(tempFile.path)
-      .jpeg({ quality: 92, mozjpeg: true })
-      .toFile(outputPath);
+  .rotate()
+  .jpeg({ quality: 92, mozjpeg: true })
+  .toFile(outputPath);
 
     fs.unlink(tempFile.path, () => {});
 
