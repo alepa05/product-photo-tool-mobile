@@ -1,22 +1,17 @@
 {
   "name": "product-photo-tool-mobile",
   "version": "1.0.0",
-  "description": "Tool per generare immagini packshot con sfondo bianco e invio via email",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js",
-    "deploy": "npm install && npm run start"
+    "start": "node server.js"
   },
   "dependencies": {
-    "express": "^4.21.2",
+    "axios": "^1.6.8",
+    "cors": "^2.8.5",
+    "express": "^4.18.2",
+    "form-data": "^4.0.0",
     "multer": "^1.4.5-lts.1",
-    "nodemailer": "^6.9.16",
-    "sharp": "^0.33.5"
-  },
-  "devDependencies": {},
-  "engines": {
-    "node": "16.x"
-  },
-  "author": "Alessandro Paglietta",
-  "license": "MIT"
+    "nodemailer": "^6.9.13",
+    "sharp": "^0.33.2"
+  }
 }
