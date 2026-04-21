@@ -45,8 +45,8 @@ form.addEventListener("submit", async (e) => {
     return;
   }
 
-  const codice = document.getElementById("codice").value;
-  const email = document.getElementById("email").value;
+  const codice = document.getElementById("codice").value.trim();
+  const email = document.getElementById("email").value.trim();
 
   const formData = new FormData();
   formData.append("image", selectedImage);
@@ -57,26 +57,30 @@ form.addEventListener("submit", async (e) => {
   result.classList.add("hidden");
 
   try {
-    const res = await fetch("/upload", {
+    const res = await fetch("/process", {
       method: "POST",
       body: formData
     });
 
     const data = await res.json();
 
-    if (data.success) {
-      status.textContent = "JPG creato e inviato via Gmail.";
-
-      const cacheBuster = `?t=${Date.now()}`;
-      preview.src = data.image + cacheBuster;
-      downloadLink.href = data.image + cacheBuster;
-      downloadLink.download = `${codice}.png`;
-
-      result.classList.remove("hidden");
-    } else {
-      status.textContent = data.error || "Errore";
+    if (!res.ok || !data.success) {
+      status.textContent = data.error || "Errore durante l'elaborazione";
+      return;
     }
+
+    status.textContent = data.emailed
+      ? "JPG creato e inviato via Gmail."
+      : "JPG creato.";
+
+    const cacheBuster = `?t=${Date.now()}`;
+    preview.src = data.imageUrl + cacheBuster;
+    downloadLink.href = data.imageUrl + cacheBuster;
+    downloadLink.download = data.filename;
+
+    result.classList.remove("hidden");
   } catch (err) {
+    console.error(err);
     status.textContent = "Errore di connessione";
   }
 });
