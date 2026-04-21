@@ -1,130 +1,170 @@
-const express = require('express');
-const multer = require('multer');
-const cors = require('cors');
-const axios = require('axios');
-const FormData = require('form-data');
-const sharp = require('sharp');
-const nodemailer = require('nodemailer');
+const express = require("express");
+const multer = require("multer");
+const cors = require("cors");
+const axios = require("axios");
+const FormData = require("form-data");
+const nodemailer = require("nodemailer");
+const sharp = require("sharp");
+const fs = require("fs");
+const path = require("path");
 
 const app = express();
+
 app.use(cors());
 app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+app.use(express.static(path.join(__dirname, "public")));
+
+const OUTPUT_DIR = path.join(__dirname, "output");
+if (!fs.existsSync(OUTPUT_DIR)) {
+  fs.mkdirSync(OUTPUT_DIR, { recursive: true });
+}
+
+app.use("/output", express.static(OUTPUT_DIR));
 
 const upload = multer({ storage: multer.memoryStorage() });
+const PORT = process.env.PORT || 10000;
 
+function sanitizeFilename(value) {
+  return String(value || "output")
+    .trim()
+    .replace(/[^\w\-]+/g, "_")
+    .replace(/^_+|_+$/g, "") || "output";
+}
 
-// 📸 FUNZIONE REMOVE.BG
-async function removeBackground(buffer) {
+async function removeBackground(buffer, mimetype = "image/jpeg") {
+  const apiKey = process.env.REMOVE_BG_API_KEY;
+
+  if (!apiKey) {
+    throw new Error("REMOVE_BG_API_KEY mancante");
+  }
+
   const formData = new FormData();
-  formData.append('image_file', buffer, 'image.jpg');
-  formData.append('size', 'auto');
+  formData.append("image_file", buffer, {
+    filename: "image.jpg",
+    contentType: mimetype
+  });
+  formData.append("size", "auto");
 
   const response = await axios.post(
-    'https://api.remove.bg/v1.0/removebg',
+    "https://api.remove.bg/v1.0/removebg",
     formData,
     {
       headers: {
         ...formData.getHeaders(),
-        'X-Api-Key': process.env.REMOVE_BG_API_KEY
+        "X-Api-Key": apiKey
       },
-      responseType: 'arraybuffer'
+      responseType: "arraybuffer",
+      maxBodyLength: Infinity
     }
   );
 
-  return response.data;
+  return Buffer.from(response.data);
 }
 
+function createTransporter() {
+  const user = process.env.GMAIL_USER;
+  const pass = process.env.GMAIL_APP_PASSWORD;
 
-// 🎨 MIGLIORAMENTO IMMAGINE + OMBRA
-async function improveImage(buffer) {
-  const image = sharp(buffer);
+  if (!user || !pass) {
+    return null;
+  }
 
-  const metadata = await image.metadata();
-
-  const resized = await image
-    .resize(800, 800, { fit: 'contain', background: { r: 255, g: 255, b: 255, alpha: 0 } })
-    .png()
-    .toBuffer();
-
-  const shadow = await sharp(resized)
-    .blur(10)
-    .modulate({ brightness: 0.5 })
-    .toBuffer();
-
-  const final = await sharp({
-    create: {
-      width: 1000,
-      height: 1000,
-      channels: 4,
-      background: { r: 255, g: 255, b: 255, alpha: 1 }
-    }
-  })
-    .composite([
-      { input: shadow, top: 120, left: 100 },
-      { input: resized, top: 80, left: 100 }
-    ])
-    .jpeg({ quality: 90 })
-    .toBuffer();
-
-  return final;
-}
-
-
-// 📧 INVIO EMAIL
-async function sendEmail(buffer, filename, email) {
-  const transporter = nodemailer.createTransport({
-    service: 'gmail',
+  return nodemailer.createTransport({
+    service: "gmail",
     auth: {
-      user: process.env.EMAIL_USER,
-      pass: process.env.EMAIL_PASS
+      user,
+      pass
     }
   });
+}
+
+async function sendEmailWithAttachment({ to, subject, text, filePath, filename }) {
+  const transporter = createTransporter();
+
+  if (!transporter) {
+    return { sent: false, reason: "Gmail non configurata sul server" };
+  }
 
   await transporter.sendMail({
-    from: process.env.EMAIL_USER,
-    to: email,
-    subject: 'Packshot automatico',
-    text: 'Ecco la tua immagine.',
+    from: process.env.GMAIL_USER,
+    to,
+    subject,
+    text,
     attachments: [
       {
         filename,
-        content: buffer
+        path: filePath
       }
     ]
   });
+
+  return { sent: true };
 }
 
+app.get("/", (req, res) => {
+  res.sendFile(path.join(__dirname, "public", "index.html"));
+});
 
-// 🚀 ROUTE PRINCIPALE
-app.post('/upload', upload.single('image'), async (req, res) => {
+app.post("/process", upload.single("image"), async (req, res) => {
   try {
-    const codice = req.body.codice;
-    const email = req.body.email;
-    const fileBuffer = req.file.buffer;
+    const codice = sanitizeFilename(req.body.codice);
+    const email = String(req.body.email || "").trim();
+    const file = req.file;
 
-    // 1. rimuovi sfondo
-    const noBg = await removeBackground(fileBuffer);
+    if (!file) {
+      return res.status(400).json({
+        success: false,
+        error: "Nessuna immagine caricata."
+      });
+    }
 
-    // 2. migliora immagine
-    const finalImage = await improveImage(noBg);
+    const noBgBuffer = await removeBackground(file.buffer, file.mimetype);
 
-    const filename = `${codice}.jpg`;
+    const outputFilename = `${codice}.jpg`;
+    const outputPath = path.join(OUTPUT_DIR, outputFilename);
 
-    // 3. invia email
-    await sendEmail(finalImage, filename, email);
+    // SOLO SCONTORNO + SFONDO BIANCO + JPG
+    await sharp(noBgBuffer)
+      .rotate()
+      .resize(1800, 1800, {
+        fit: "contain",
+        background: { r: 255, g: 255, b: 255, alpha: 0 }
+      })
+      .flatten({ background: "#ffffff" })
+      .jpeg({ quality: 92, mozjpeg: true })
+      .toFile(outputPath);
 
-    res.json({
+    let emailResult = { sent: false, reason: "Nessuna email richiesta" };
+
+    if (email) {
+      emailResult = await sendEmailWithAttachment({
+        to: email,
+        subject: `File prodotto ${codice}`,
+        text: `In allegato trovi il file ${outputFilename}.`,
+        filePath: outputPath,
+        filename: outputFilename
+      });
+    }
+
+    return res.json({
       success: true,
-      image: `data:image/jpeg;base64,${finalImage.toString('base64')}`
+      imageUrl: `/output/${outputFilename}`,
+      filename: outputFilename,
+      emailed: emailResult.sent,
+      emailMessage: emailResult.sent
+        ? `Email inviata a ${email}`
+        : emailResult.reason
     });
-
   } catch (error) {
-    console.error(error);
-    res.status(500).json({ error: 'Errore durante elaborazione' });
+    console.error("Errore processing:", error.response?.data || error.message || error);
+    return res.status(500).json({
+      success: false,
+      error: "Errore durante l'elaborazione automatica."
+    });
   }
 });
 
-
-app.listen(10000, () => {
-  console.log('Server attivo su porta 10000');
+app.listen(PORT, () => {
+  console.log(`Server attivo su porta ${PORT}`);
 });
