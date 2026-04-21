@@ -2,59 +2,134 @@ const express = require("express");
 const multer = require("multer");
 const fs = require("fs");
 const path = require("path");
+const sharp = require("sharp");
+const nodemailer = require("nodemailer");
 
 const app = express();
 
-// Cartelle
-const upload = multer({ dest: "uploads/" });
-const OUTPUT_DIR = "output";
+const UPLOAD_DIR = path.join(__dirname, "uploads");
+const OUTPUT_DIR = path.join(__dirname, "output");
 
-// Crea cartella output se non esiste
-if (!fs.existsSync(OUTPUT_DIR)) {
-  fs.mkdirSync(OUTPUT_DIR);
+for (const dir of [UPLOAD_DIR, OUTPUT_DIR]) {
+  if (!fs.existsSync(dir)) {
+    fs.mkdirSync(dir, { recursive: true });
+  }
 }
 
-// Porta (Render usa process.env.PORT)
+const upload = multer({ dest: UPLOAD_DIR });
 const PORT = process.env.PORT || 3000;
 
-// 🔑 API KEY (presa da Render env variables)
-const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
+app.use(express.static(path.join(__dirname, "public")));
+app.use("/output", express.static(OUTPUT_DIR));
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
 
-// Serve frontend
-app.use(express.static("public"));
+function sanitizeFilename(value) {
+  return String(value || "output")
+    .trim()
+    .replace(/[^\w\-]+/g, "_")
+    .replace(/^_+|_+$/g, "") || "output";
+}
 
-// Home
+function createTransporter() {
+  const user = process.env.GMAIL_USER;
+  const pass = process.env.GMAIL_APP_PASSWORD;
+
+  if (!user || !pass) {
+    return null;
+  }
+
+  return nodemailer.createTransport({
+    service: "gmail",
+    auth: {
+      user,
+      pass
+    }
+  });
+}
+
+async function sendEmailWithAttachment({ to, subject, text, filePath, filename }) {
+  const transporter = createTransporter();
+  if (!transporter) {
+    return { sent: false, reason: "Gmail non configurata sul server" };
+  }
+
+  await transporter.sendMail({
+    from: process.env.GMAIL_USER,
+    to,
+    subject,
+    text,
+    attachments: [
+      {
+        filename,
+        path: filePath
+      }
+    ]
+  });
+
+  return { sent: true };
+}
+
 app.get("/", (req, res) => {
-  res.sendFile(path.join(__dirname, "public/index.html"));
+  res.sendFile(path.join(__dirname, "public", "index.html"));
 });
 
-// Upload immagine
-app.post("/upload", upload.single("image"), async (req, res) => {
+app.post("/process", upload.single("image"), async (req, res) => {
+  const tempFile = req.file;
+  const codice = sanitizeFilename(req.body.codice);
+  const recipientEmail = String(req.body.email || "").trim();
+
+  if (!tempFile) {
+    return res.status(400).json({ success: false, error: "Nessuna immagine caricata." });
+  }
+
+  if (!codice) {
+    fs.unlink(tempFile.path, () => {});
+    return res.status(400).json({ success: false, error: "Codice articolo mancante." });
+  }
+
+  const outputFilename = `${codice}.jpg`;
+  const outputPath = path.join(OUTPUT_DIR, outputFilename);
+
   try {
-    const filePath = req.file.path;
+    // Conversione reale a JPEG
+    await sharp(tempFile.path)
+      .jpeg({ quality: 92, mozjpeg: true })
+      .toFile(outputPath);
 
-    // Simulazione processing (qui poi collegheremo OpenAI)
-    const outputPath = path.join(
-      OUTPUT_DIR,
-      "processed-" + Date.now() + ".jpg"
-    );
+    fs.unlink(tempFile.path, () => {});
 
-    fs.copyFileSync(filePath, outputPath);
+    let emailResult = { sent: false };
 
-    res.json({
+    if (recipientEmail) {
+      emailResult = await sendEmailWithAttachment({
+        to: recipientEmail,
+        subject: `File prodotto ${codice}`,
+        text: `In allegato trovi il file ${outputFilename}.`,
+        filePath: outputPath,
+        filename: outputFilename
+      });
+    }
+
+    return res.json({
       success: true,
-      image: "/" + outputPath,
+      imageUrl: `/output/${outputFilename}`,
+      filename: outputFilename,
+      emailed: emailResult.sent,
+      emailMessage: emailResult.sent
+        ? `Email inviata a ${recipientEmail}`
+        : (recipientEmail ? emailResult.reason : "Nessuna email richiesta")
     });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: "Errore upload" });
+  } catch (error) {
+    console.error("Errore processing:", error);
+    fs.unlink(tempFile.path, () => {});
+    return res.status(500).json({
+      success: false,
+      error: "Errore durante la creazione del JPEG."
+    });
   }
 });
 
-// Serve immagini output
-app.use("/output", express.static("output"));
-
-// Start server
 app.listen(PORT, () => {
-  console.log("Server attivo su porta " + PORT);
+  console.log(`Server attivo su porta ${PORT}`);
 });
