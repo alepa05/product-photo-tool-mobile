@@ -20,15 +20,15 @@
         <input id="email" type="email" required />
 
         <div class="button-row">
-          <label for="cameraInput" class="secondary">Scatta foto</label>
-          <label for="fileInput" class="secondary">Scegli file</label>
+          <label for="cameraInput" class="secondary file-trigger">Scatta foto</label>
+          <label for="fileInput" class="secondary file-trigger">Scegli file</label>
         </div>
 
-        <input id="cameraInput" type="file" accept="image/*" capture="environment" hidden>
-        <input id="fileInput" type="file" accept="image/*" hidden>
+        <input id="cameraInput" type="file" accept="image/*" capture="environment" class="file-input-hidden">
+        <input id="fileInput" type="file" accept="image/*" class="file-input-hidden">
 
         <div id="selectedFile">Nessun file selezionato</div>
-        <img id="previewUpload" class="preview hidden">
+        <img id="previewUpload" class="preview hidden" alt="Anteprima foto selezionata">
 
         <button type="submit">Genera immagine</button>
       </form>
@@ -36,13 +36,13 @@
       <p id="status"></p>
 
       <div id="result" class="hidden">
-        <img id="previewResult" class="result-img">
-
-        <p id="counter"></p>
+        <h2>Risultato</h2>
+        <img id="previewResult" class="result-img" alt="Risultato">
+        <a id="downloadLink" class="download-btn">Scarica JPG</a>
 
         <div class="actions">
-          <button id="newBtn" class="secondary">Aggiungi altra immagine</button>
-          <button id="sendBtn">Invia email</button>
+          <button type="button" id="sendBtn">Invia email</button>
+          <button type="button" id="newBtn" class="secondary-btn">Nuova immagine</button>
         </div>
       </div>
     </div>
