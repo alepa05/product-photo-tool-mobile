@@ -1,22 +1,24 @@
 const form = document.getElementById("uploadForm");
 const cameraInput = document.getElementById("cameraInput");
 const fileInput = document.getElementById("fileInput");
-
 const selectedFile = document.getElementById("selectedFile");
 const previewUpload = document.getElementById("previewUpload");
 
 const result = document.getElementById("result");
 const previewResult = document.getElementById("previewResult");
-const counter = document.getElementById("counter");
+const downloadLink = document.getElementById("downloadLink");
 
 const newBtn = document.getElementById("newBtn");
 const sendBtn = document.getElementById("sendBtn");
 
 const status = document.getElementById("status");
 
+const codiceInput = document.getElementById("codice");
+const emailInput = document.getElementById("email");
+
 let selectedImage = null;
-let images = [];
-let lastImage = null;
+let currentFilename = null;
+let currentImageUrl = null;
 
 function showPreview(file) {
   if (!file) return;
@@ -33,7 +35,7 @@ function handleSelectedFile(file) {
   showPreview(file);
 }
 
-// FIX iPhone/Safari: resetta il valore prima di aprire camera/file picker
+// Fix iPhone/Safari
 cameraInput.addEventListener("click", () => {
   cameraInput.value = "";
 });
@@ -52,6 +54,28 @@ fileInput.addEventListener("change", (e) => {
   handleSelectedFile(file);
 });
 
+function resetForNextImage() {
+  codiceInput.value = "";
+  selectedImage = null;
+  currentFilename = null;
+  currentImageUrl = null;
+
+  cameraInput.value = "";
+  fileInput.value = "";
+
+  selectedFile.textContent = "Nessun file selezionato";
+
+  previewUpload.src = "";
+  previewUpload.classList.add("hidden");
+
+  previewResult.src = "";
+  downloadLink.href = "";
+  result.classList.add("hidden");
+
+  status.textContent = "";
+  codiceInput.focus();
+}
+
 form.addEventListener("submit", async (e) => {
   e.preventDefault();
 
@@ -60,8 +84,18 @@ form.addEventListener("submit", async (e) => {
     return;
   }
 
-  const codice = document.getElementById("codice").value.trim();
-  const email = document.getElementById("email").value.trim();
+  const codice = codiceInput.value.trim();
+  const email = emailInput.value.trim();
+
+  if (!codice) {
+    status.textContent = "Inserisci il codice articolo";
+    return;
+  }
+
+  if (!email) {
+    status.textContent = "Inserisci l'email destinatario";
+    return;
+  }
 
   const data = new FormData();
   data.append("image", selectedImage);
@@ -83,16 +117,14 @@ form.addEventListener("submit", async (e) => {
       return;
     }
 
-    lastImage = json.filename;
-
-    if (!images.includes(lastImage)) {
-      images.push(lastImage);
-    }
+    currentFilename = json.filename;
+    currentImageUrl = json.imageUrl;
 
     previewResult.src = json.imageUrl + "?t=" + Date.now();
-    result.classList.remove("hidden");
+    downloadLink.href = json.imageUrl + "?t=" + Date.now();
+    downloadLink.download = json.filename;
 
-    counter.textContent = `Immagini pronte: ${images.length}`;
+    result.classList.remove("hidden");
     status.textContent = "Immagine pronta";
   } catch (err) {
     console.error(err);
@@ -101,20 +133,18 @@ form.addEventListener("submit", async (e) => {
 });
 
 newBtn.addEventListener("click", () => {
-  document.getElementById("codice").value = "";
-  selectedImage = null;
-  selectedFile.textContent = "Nessun file selezionato";
-  previewUpload.src = "";
-  previewUpload.classList.add("hidden");
-  cameraInput.value = "";
-  fileInput.value = "";
-  status.textContent = "";
+  resetForNextImage();
 });
 
 sendBtn.addEventListener("click", async () => {
-  const email = document.getElementById("email").value.trim();
+  const email = emailInput.value.trim();
 
-  if (images.length === 0) {
+  if (!email) {
+    status.textContent = "Inserisci l'email destinatario";
+    return;
+  }
+
+  if (!currentFilename) {
     status.textContent = "Nessuna immagine da inviare";
     return;
   }
@@ -129,7 +159,7 @@ sendBtn.addEventListener("click", async () => {
       },
       body: JSON.stringify({
         email,
-        filenames: images
+        filenames: [currentFilename]
       })
     });
 
@@ -141,10 +171,9 @@ sendBtn.addEventListener("click", async () => {
     }
 
     status.textContent = "Email inviata";
-    images = [];
-    lastImage = null;
-    counter.textContent = "";
-    result.classList.add("hidden");
+    const emailToKeep = emailInput.value;
+    resetForNextImage();
+    emailInput.value = emailToKeep;
   } catch (err) {
     console.error(err);
     status.textContent = "Errore invio";
