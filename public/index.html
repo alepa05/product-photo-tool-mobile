@@ -13,53 +13,37 @@
       <p class="sub">Scatta o carica una foto, genera il JPG e invialo via Gmail.</p>
 
       <form id="uploadForm">
-        <label class="label">Codice articolo</label>
-        <input id="codice" name="codice" required />
+        <label>Codice articolo</label>
+        <input id="codice" required />
 
-        <label class="label">Email destinatario</label>
-        <input id="email" name="email" type="email" required />
-
-        <label class="label">Foto prodotto</label>
+        <label>Email destinatario</label>
+        <input id="email" type="email" required />
 
         <div class="button-row">
-          <label class="secondary-button" for="cameraInput">Scatta foto</label>
-          <label class="secondary-button" for="fileInput">Scegli file</label>
+          <label for="cameraInput" class="secondary">Scatta foto</label>
+          <label for="fileInput" class="secondary">Scegli file</label>
         </div>
 
-        <input id="cameraInput" type="file" accept="image/*" capture="environment" class="hidden">
-        <input id="fileInput" type="file" accept="image/*" class="hidden">
+        <input id="cameraInput" type="file" accept="image/*" capture="environment" hidden>
+        <input id="fileInput" type="file" accept="image/*" hidden>
 
         <div id="selectedFile">Nessun file selezionato</div>
-        <img id="previewUpload" class="preview-upload hidden" alt="Anteprima foto selezionata" />
+        <img id="previewUpload" class="preview hidden">
 
-        <button type="submit">Genera e salva</button>
+        <button type="submit">Genera immagine</button>
       </form>
 
       <p id="status"></p>
 
       <div id="result" class="hidden">
-        <h2>Risultato</h2>
-        <img id="preview" class="result-preview" alt="Risultato" />
-        <a id="downloadLink" class="download-btn">Scarica JPG</a>
+        <img id="previewResult" class="result-img">
 
-        <label class="checkbox-row">
-          <input type="checkbox" id="sendAllTogether" />
-          <span>Invia tutte le immagini generate insieme</span>
-        </label>
+        <p id="counter"></p>
 
-        <div class="button-stack">
-          <button type="button" id="newImageBtn" class="secondary-action">
-            Genera nuova immagine
-          </button>
-          <button type="button" id="sendEmailBtn" class="primary-action">
-            Invia email
-          </button>
+        <div class="actions">
+          <button id="newBtn" class="secondary">Aggiungi altra immagine</button>
+          <button id="sendBtn">Invia email</button>
         </div>
-      </div>
-
-      <div id="queueBox" class="queue-box hidden">
-        <strong>Immagini generate in attesa:</strong>
-        <div id="queueList"></div>
       </div>
     </div>
   </main>
