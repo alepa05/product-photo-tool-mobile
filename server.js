@@ -1,28 +1,29 @@
 const express = require("express");
 const multer = require("multer");
-const fs = require("fs");
-const path = require("path");
+const cors = require("cors");
+const axios = require("axios");
+const FormData = require("form-data");
 const nodemailer = require("nodemailer");
 const sharp = require("sharp");
+const fs = require("fs");
+const path = require("path");
 
 const app = express();
 
-const UPLOAD_DIR = path.join(__dirname, "uploads");
-const OUTPUT_DIR = path.join(__dirname, "output");
-
-for (const dir of [UPLOAD_DIR, OUTPUT_DIR]) {
-  if (!fs.existsSync(dir)) {
-    fs.mkdirSync(dir, { recursive: true });
-  }
-}
-
-const upload = multer({ dest: UPLOAD_DIR });
-const PORT = process.env.PORT || 3000;
-
-app.use(express.static(path.join(__dirname, "public")));
-app.use("/output", express.static(OUTPUT_DIR));
+app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+app.use(express.static(path.join(__dirname, "public")));
+
+const OUTPUT_DIR = path.join(__dirname, "output");
+if (!fs.existsSync(OUTPUT_DIR)) {
+  fs.mkdirSync(OUTPUT_DIR, { recursive: true });
+}
+
+app.use("/output", express.static(OUTPUT_DIR));
+
+const upload = multer({ storage: multer.memoryStorage() });
+const PORT = process.env.PORT || 10000;
 
 function sanitizeFilename(value) {
   return String(value || "output")
@@ -31,73 +32,84 @@ function sanitizeFilename(value) {
     .replace(/^_+|_+$/g, "") || "output";
 }
 
-function createTransporter() {
-  const user = process.env.GMAIL_USER;
-  const pass = process.env.GMAIL_APP_PASSWORD;
-
-  if (!user || !pass) return null;
-
-  return nodemailer.createTransport({
-    service: "gmail",
-    auth: { user, pass }
-  });
-}
-
-async function sendEmailWithAttachment({ to, subject, text, filePath, filename }) {
-  const transporter = createTransporter();
-
-  if (!transporter) {
-    return { sent: false, reason: "Gmail non configurata sul server" };
-  }
-
-  await transporter.sendMail({
-    from: process.env.GMAIL_USER,
-    to,
-    subject,
-    text,
-    attachments: [
-      {
-        filename,
-        path: filePath
-      }
-    ]
-  });
-
-  return { sent: true };
-}
-
-async function removeBackgroundWithRemoveBg(inputPath) {
+async function removeBackground(buffer, mimetype = "image/jpeg") {
   const apiKey = process.env.REMOVE_BG_API_KEY;
 
   if (!apiKey) {
     throw new Error("REMOVE_BG_API_KEY mancante");
   }
 
-  const fileBuffer = fs.readFileSync(inputPath);
-
   const formData = new FormData();
+  formData.append("image_file", buffer, {
+    filename: "image.jpg",
+    contentType: mimetype
+  });
   formData.append("size", "auto");
-  formData.append(
-    "image_file",
-    new Blob([fileBuffer], { type: "image/jpeg" }),
-    "upload.jpg"
+
+  const response = await axios.post(
+    "https://api.remove.bg/v1.0/removebg",
+    formData,
+    {
+      headers: {
+        ...formData.getHeaders(),
+        "X-Api-Key": apiKey
+      },
+      responseType: "arraybuffer",
+      maxBodyLength: Infinity
+    }
   );
 
-  const response = await fetch("https://api.remove.bg/v1.0/removebg", {
-    method: "POST",
-    headers: {
-      "X-Api-Key": apiKey
-    },
-    body: formData
-  });
+  return Buffer.from(response.data);
+}
 
-  if (!response.ok) {
-    const text = await response.text();
-    throw new Error(`remove.bg error ${response.status}: ${text}`);
+function createTransporter() {
+  const user = process.env.GMAIL_USER;
+  const pass = process.env.GMAIL_APP_PASSWORD;
+
+  if (!user || !pass) {
+    return null;
   }
 
-  const arrayBuffer = await response.arrayBuffer();
-  return Buffer.from(arrayBuffer);
+  return nodemailer.createTransport({
+    service: "gmail",
+    auth: {
+      user,
+      pass
+    }
+  });
+}
+
+async function sendEmailWithAttachments({ to, filenames }) {
+  const transporter = createTransporter();
+
+  if (!transporter) {
+    return { sent: false, reason: "Gmail non configurata sul server" };
+  }
+
+  const attachments = filenames.map((filename) => ({
+    filename,
+    path: path.join(OUTPUT_DIR, filename)
+  }));
+
+  const subject =
+    filenames.length === 1
+      ? `File prodotto ${filenames[0]}`
+      : `File prodotti (${filenames.length} allegati)`;
+
+  const text =
+    filenames.length === 1
+      ? `In allegato trovi il file ${filenames[0]}.`
+      : `In allegato trovi ${filenames.length} file prodotto.`;
+
+  await transporter.sendMail({
+    from: process.env.GMAIL_USER,
+    to,
+    subject,
+    text,
+    attachments
+  });
+
+  return { sent: true };
 }
 
 app.get("/", (req, res) => {
@@ -105,59 +117,98 @@ app.get("/", (req, res) => {
 });
 
 app.post("/process", upload.single("image"), async (req, res) => {
-  const tempFile = req.file;
-  const codice = sanitizeFilename(req.body.codice);
-  const recipientEmail = String(req.body.email || "").trim();
-
-  if (!tempFile) {
-    return res.status(400).json({ success: false, error: "Nessuna immagine caricata." });
-  }
-
-  const outputFilename = `${codice}.jpg`;
-  const outputPath = path.join(OUTPUT_DIR, outputFilename);
-
   try {
-    const noBgPngBuffer = await removeBackgroundWithRemoveBg(tempFile.path);
+    const codice = sanitizeFilename(req.body.codice);
+    const file = req.file;
 
-    await sharp(noBgPngBuffer)
+    if (!file) {
+      return res.status(400).json({
+        success: false,
+        error: "Nessuna immagine caricata."
+      });
+    }
+
+    const noBgBuffer = await removeBackground(file.buffer, file.mimetype);
+
+    const outputFilename = `${codice}.jpg`;
+    const outputPath = path.join(OUTPUT_DIR, outputFilename);
+
+    await sharp(noBgBuffer)
       .rotate()
+      .resize(1800, 1800, {
+        fit: "contain",
+        background: { r: 255, g: 255, b: 255, alpha: 0 }
+      })
       .flatten({ background: "#ffffff" })
       .jpeg({ quality: 92, mozjpeg: true })
       .toFile(outputPath);
 
-    fs.unlink(tempFile.path, () => {});
-
-    let emailResult = { sent: false, reason: "Nessuna email richiesta" };
-
-    if (recipientEmail) {
-      emailResult = await sendEmailWithAttachment({
-        to: recipientEmail,
-        subject: `File prodotto ${codice}`,
-        text: `In allegato trovi il file ${outputFilename}.`,
-        filePath: outputPath,
-        filename: outputFilename
-      });
-    }
-
     return res.json({
       success: true,
       imageUrl: `/output/${outputFilename}`,
-      filename: outputFilename,
-      emailed: emailResult.sent,
-      emailMessage: emailResult.sent
-        ? `Email inviata a ${recipientEmail}`
-        : emailResult.reason
+      filename: outputFilename
     });
   } catch (error) {
-    console.error("Errore processing:", error);
-    fs.unlink(tempFile.path, () => {});
+    console.error("Errore processing:", error.response?.data || error.message || error);
     return res.status(500).json({
       success: false,
-      error: "Errore durante lo scontorno automatico."
+      error: "Errore durante l'elaborazione automatica."
+    });
+  }
+});
+
+app.post("/send-email", async (req, res) => {
+  try {
+    const email = String(req.body.email || "").trim();
+    const filenames = Array.isArray(req.body.filenames) ? req.body.filenames : [];
+
+    if (!email) {
+      return res.status(400).json({
+        success: false,
+        error: "Email mancante."
+      });
+    }
+
+    if (filenames.length === 0) {
+      return res.status(400).json({
+        success: false,
+        error: "Nessuna immagine da inviare."
+      });
+    }
+
+    const missing = filenames.filter((filename) => {
+      return !fs.existsSync(path.join(OUTPUT_DIR, filename));
+    });
+
+    if (missing.length > 0) {
+      return res.status(400).json({
+        success: false,
+        error: `File mancanti: ${missing.join(", ")}`
+      });
+    }
+
+    const emailResult = await sendEmailWithAttachments({
+      to: email,
+      filenames
+    });
+
+    return res.json({
+      success: true,
+      message:
+        filenames.length === 1
+          ? "Email inviata con 1 immagine."
+          : `Email inviata con ${filenames.length} immagini.`,
+      emailed: emailResult.sent
+    });
+  } catch (error) {
+    console.error("Errore invio email:", error.message || error);
+    return res.status(500).json({
+      success: false,
+      error: "Errore durante invio email."
     });
   }
 });
 
 app.listen(PORT, () => {
-  console.log("Server attivo su porta " + PORT);
+  console.log(`Server attivo su porta ${PORT}`);
 });
