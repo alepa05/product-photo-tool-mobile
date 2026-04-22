@@ -194,10 +194,7 @@ app.post("/send-email", async (req, res) => {
 
     return res.json({
       success: true,
-      message:
-        filenames.length === 1
-          ? "Email inviata con 1 immagine."
-          : `Email inviata con ${filenames.length} immagini.`,
+      message: "Email inviata con 1 immagine.",
       emailed: emailResult.sent
     });
   } catch (error) {
