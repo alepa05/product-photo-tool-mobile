@@ -1,89 +1,152 @@
 const form = document.getElementById("uploadForm");
-const inputFile = document.getElementById("fileInput");
-const preview = document.getElementById("preview");
-const resultImg = document.getElementById("resultImg");
-const emailInput = document.getElementById("email");
+const cameraInput = document.getElementById("cameraInput");
+const fileInput = document.getElementById("fileInput");
 
-let immaginiGenerate = [];
+const selectedFile = document.getElementById("selectedFile");
+const previewUpload = document.getElementById("previewUpload");
 
-inputFile.addEventListener("change", () => {
-  const file = inputFile.files[0];
+const result = document.getElementById("result");
+const previewResult = document.getElementById("previewResult");
+const counter = document.getElementById("counter");
+
+const newBtn = document.getElementById("newBtn");
+const sendBtn = document.getElementById("sendBtn");
+
+const status = document.getElementById("status");
+
+let selectedImage = null;
+let images = [];
+let lastImage = null;
+
+function showPreview(file) {
+  if (!file) return;
+  const url = URL.createObjectURL(file);
+  previewUpload.src = url;
+  previewUpload.classList.remove("hidden");
+}
+
+function handleSelectedFile(file) {
   if (!file) return;
 
-  const reader = new FileReader();
-  reader.onload = (e) => {
-    preview.src = e.target.result;
-    preview.style.display = "block";
-  };
-  reader.readAsDataURL(file);
+  selectedImage = file;
+  selectedFile.textContent = `Selezionato: ${file.name || "immagine"}`;
+  showPreview(file);
+}
+
+// FIX iPhone/Safari: resetta il valore prima di aprire camera/file picker
+cameraInput.addEventListener("click", () => {
+  cameraInput.value = "";
+});
+
+fileInput.addEventListener("click", () => {
+  fileInput.value = "";
+});
+
+cameraInput.addEventListener("change", (e) => {
+  const file = e.target.files && e.target.files[0];
+  handleSelectedFile(file);
+});
+
+fileInput.addEventListener("change", (e) => {
+  const file = e.target.files && e.target.files[0];
+  handleSelectedFile(file);
 });
 
 form.addEventListener("submit", async (e) => {
   e.preventDefault();
 
-  const file = inputFile.files[0];
-  const codice = document.getElementById("codice").value;
-
-  if (!file || !codice) {
-    alert("Compila tutti i campi");
+  if (!selectedImage) {
+    status.textContent = "Seleziona una foto";
     return;
   }
 
-  const formData = new FormData();
-  formData.append("image", file);
-  formData.append("codice", codice);
+  const codice = document.getElementById("codice").value.trim();
+  const email = document.getElementById("email").value.trim();
+
+  const data = new FormData();
+  data.append("image", selectedImage);
+  data.append("codice", codice);
+  data.append("email", email);
+
+  status.textContent = "Elaborazione...";
 
   try {
-    const res = await fetch("/upload", {
+    const res = await fetch("/process", {
       method: "POST",
-      body: formData
+      body: data
     });
 
-    const blob = await res.blob();
-    const url = URL.createObjectURL(blob);
+    const json = await res.json();
 
-    resultImg.src = url;
-    resultImg.style.display = "block";
+    if (!json.success) {
+      status.textContent = json.error || "Errore";
+      return;
+    }
 
-    immaginiGenerate.push(blob);
+    lastImage = json.filename;
 
+    if (!images.includes(lastImage)) {
+      images.push(lastImage);
+    }
+
+    previewResult.src = json.imageUrl + "?t=" + Date.now();
+    result.classList.remove("hidden");
+
+    counter.textContent = `Immagini pronte: ${images.length}`;
+    status.textContent = "Immagine pronta";
   } catch (err) {
     console.error(err);
-    alert("Errore di connessione");
+    status.textContent = "Errore di connessione";
   }
 });
 
-document.getElementById("nuovaImg").addEventListener("click", () => {
+newBtn.addEventListener("click", () => {
   document.getElementById("codice").value = "";
-  inputFile.value = "";
-  preview.style.display = "none";
+  selectedImage = null;
+  selectedFile.textContent = "Nessun file selezionato";
+  previewUpload.src = "";
+  previewUpload.classList.add("hidden");
+  cameraInput.value = "";
+  fileInput.value = "";
+  status.textContent = "";
 });
 
-document.getElementById("inviaEmail").addEventListener("click", async () => {
-  const email = emailInput.value;
+sendBtn.addEventListener("click", async () => {
+  const email = document.getElementById("email").value.trim();
 
-  if (!email || immaginiGenerate.length === 0) {
-    alert("Nessuna immagine o email mancante");
+  if (images.length === 0) {
+    status.textContent = "Nessuna immagine da inviare";
     return;
   }
 
-  const formData = new FormData();
-  formData.append("email", email);
-
-  immaginiGenerate.forEach((img, i) => {
-    formData.append("images", img, `img_${i}.jpg`);
-  });
+  status.textContent = "Invio email...";
 
   try {
-    await fetch("/send-multiple", {
+    const res = await fetch("/send-email", {
       method: "POST",
-      body: formData
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        email,
+        filenames: images
+      })
     });
 
-    alert("Email inviata!");
-    immaginiGenerate = [];
+    const json = await res.json();
 
+    if (!json.success) {
+      status.textContent = json.error || "Errore invio";
+      return;
+    }
+
+    status.textContent = "Email inviata";
+    images = [];
+    lastImage = null;
+    counter.textContent = "";
+    result.classList.add("hidden");
   } catch (err) {
-    alert("Errore invio email");
+    console.error(err);
+    status.textContent = "Errore invio";
   }
 });
