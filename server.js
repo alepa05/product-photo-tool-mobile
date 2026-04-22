@@ -1,210 +1,125 @@
 const express = require("express");
 const multer = require("multer");
-const cors = require("cors");
-const axios = require("axios");
-const FormData = require("form-data");
 const nodemailer = require("nodemailer");
-const sharp = require("sharp");
+const axios = require("axios");
 const fs = require("fs");
 const path = require("path");
+const sharp = require("sharp");
+const FormData = require("form-data");
 
 const app = express();
 
-app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
-app.use(express.static(path.join(__dirname, "public")));
+app.use(express.static("public"));
 
-const OUTPUT_DIR = path.join(__dirname, "output");
-if (!fs.existsSync(OUTPUT_DIR)) {
-  fs.mkdirSync(OUTPUT_DIR, { recursive: true });
-}
+const upload = multer({ dest: "uploads/" });
 
-app.use("/output", express.static(OUTPUT_DIR));
+const transporter = nodemailer.createTransport({
+  service: "gmail",
+  auth: {
+    user: process.env.GMAIL_USER,
+    pass: process.env.GMAIL_PASS,
+  },
+});
 
-const upload = multer({ storage: multer.memoryStorage() });
-const PORT = process.env.PORT || 10000;
-
-function sanitizeFilename(value) {
-  return String(value || "output")
-    .trim()
-    .replace(/[^\w\-]+/g, "_")
-    .replace(/^_+|_+$/g, "") || "output";
-}
-
-async function removeBackground(buffer, mimetype = "image/jpeg") {
-  const apiKey = process.env.REMOVE_BG_API_KEY;
-
-  if (!apiKey) {
-    throw new Error("REMOVE_BG_API_KEY mancante");
-  }
-
+async function removeBackground(imagePath) {
   const formData = new FormData();
-  formData.append("image_file", buffer, {
-    filename: "image.jpg",
-    contentType: mimetype
-  });
+
+  formData.append("image_file", fs.createReadStream(imagePath));
   formData.append("size", "auto");
 
   const response = await axios.post(
     "https://api.remove.bg/v1.0/removebg",
     formData,
     {
+      responseType: "arraybuffer",
       headers: {
         ...formData.getHeaders(),
-        "X-Api-Key": apiKey
+        "X-Api-Key": process.env.REMOVE_BG_API_KEY,
       },
-      responseType: "arraybuffer",
-      maxBodyLength: Infinity
     }
   );
 
-  return Buffer.from(response.data);
+  return response.data;
 }
 
-function createTransporter() {
-  const user = process.env.GMAIL_USER;
-  const pass = process.env.GMAIL_APP_PASSWORD;
-
-  if (!user || !pass) {
-    return null;
-  }
-
-  return nodemailer.createTransport({
-    service: "gmail",
-    auth: {
-      user,
-      pass
-    }
-  });
-}
-
-async function sendEmailWithAttachments({ to, filenames }) {
-  const transporter = createTransporter();
-
-  if (!transporter) {
-    return { sent: false, reason: "Gmail non configurata sul server" };
-  }
-
-  const attachments = filenames.map((filename) => ({
-    filename,
-    path: path.join(OUTPUT_DIR, filename)
-  }));
-
-  const subject =
-    filenames.length === 1
-      ? `File prodotto ${filenames[0]}`
-      : `File prodotti (${filenames.length} allegati)`;
-
-  const text =
-    filenames.length === 1
-      ? `In allegato trovi il file ${filenames[0]}.`
-      : `In allegato trovi ${filenames.length} file prodotto.`;
-
-  await transporter.sendMail({
-    from: process.env.GMAIL_USER,
-    to,
-    subject,
-    text,
-    attachments
-  });
-
-  return { sent: true };
-}
-
-app.get("/", (req, res) => {
-  res.sendFile(path.join(__dirname, "public", "index.html"));
-});
-
-app.post("/process", upload.single("image"), async (req, res) => {
+app.post("/process", upload.single("photo"), async (req, res) => {
   try {
-    const codice = sanitizeFilename(req.body.codice);
-    const file = req.file;
+    const { codiceArticolo, email } = req.body;
 
-    if (!file) {
+    if (!req.file) {
       return res.status(400).json({
         success: false,
-        error: "Nessuna immagine caricata."
+        error: "Nessun file caricato",
       });
     }
 
-    const noBgBuffer = await removeBackground(file.buffer, file.mimetype);
+    const inputPath = req.file.path;
 
-    const outputFilename = `${codice}.jpg`;
-    const outputPath = path.join(OUTPUT_DIR, outputFilename);
+    const outputFileName = `${codiceArticolo}.jpg`;
+    const outputPath = path.join(__dirname, "public", outputFileName);
 
+    // RIMOZIONE SFONDO
+    const noBgBuffer = await removeBackground(inputPath);
+
+    // GENERAZIONE IMMAGINE FINALE SENZA BORDI NERI
     await sharp(noBgBuffer)
       .rotate()
       .resize(1800, 1800, {
         fit: "contain",
-        background: { r: 255, g: 255, b: 255, alpha: 0 }
+        background: {
+          r: 255,
+          g: 255,
+          b: 255,
+          alpha: 1,
+        },
       })
-      .flatten({ background: "#ffffff" })
-      .jpeg({ quality: 92, mozjpeg: true })
+      .flatten({
+        background: {
+          r: 255,
+          g: 255,
+          b: 255,
+        },
+      })
+      .jpeg({
+        quality: 95,
+        mozjpeg: true,
+      })
       .toFile(outputPath);
 
-    return res.json({
-      success: true,
-      imageUrl: `/output/${outputFilename}`,
-      filename: outputFilename
-    });
-  } catch (error) {
-    console.error("Errore processing:", error.response?.data || error.message || error);
-    return res.status(500).json({
-      success: false,
-      error: "Errore durante l'elaborazione automatica."
-    });
-  }
-});
-
-app.post("/send-email", async (req, res) => {
-  try {
-    const email = String(req.body.email || "").trim();
-    const filenames = Array.isArray(req.body.filenames) ? req.body.filenames : [];
-
-    if (!email) {
-      return res.status(400).json({
-        success: false,
-        error: "Email mancante."
-      });
-    }
-
-    if (filenames.length === 0) {
-      return res.status(400).json({
-        success: false,
-        error: "Nessuna immagine da inviare."
-      });
-    }
-
-    const missing = filenames.filter((filename) => {
-      return !fs.existsSync(path.join(OUTPUT_DIR, filename));
-    });
-
-    if (missing.length > 0) {
-      return res.status(400).json({
-        success: false,
-        error: `File mancanti: ${missing.join(", ")}`
-      });
-    }
-
-    const emailResult = await sendEmailWithAttachments({
+    // INVIO EMAIL
+    await transporter.sendMail({
+      from: process.env.GMAIL_USER,
       to: email,
-      filenames
+      subject: `Immagine ${codiceArticolo}`,
+      text: "Immagine generata automaticamente.",
+      attachments: [
+        {
+          filename: outputFileName,
+          path: outputPath,
+        },
+      ],
     });
+
+    // ELIMINA FILE TEMPORANEO
+    fs.unlinkSync(inputPath);
 
     return res.json({
       success: true,
-      message: "Email inviata con 1 immagine.",
-      emailed: emailResult.sent
+      imageUrl: `/${outputFileName}?t=${Date.now()}`,
     });
   } catch (error) {
-    console.error("Errore invio email:", error.message || error);
+    console.error(error);
+
     return res.status(500).json({
       success: false,
-      error: "Errore durante invio email."
+      error: "Errore durante l'elaborazione automatica.",
     });
   }
 });
+
+const PORT = process.env.PORT || 10000;
 
 app.listen(PORT, () => {
   console.log(`Server attivo su porta ${PORT}`);
