@@ -1,121 +1,89 @@
 const form = document.getElementById("uploadForm");
-const cameraInput = document.getElementById("cameraInput");
-const fileInput = document.getElementById("fileInput");
+const inputFile = document.getElementById("fileInput");
+const preview = document.getElementById("preview");
+const resultImg = document.getElementById("resultImg");
+const emailInput = document.getElementById("email");
 
-const selectedFile = document.getElementById("selectedFile");
-const previewUpload = document.getElementById("previewUpload");
+let immaginiGenerate = [];
 
-const result = document.getElementById("result");
-const previewResult = document.getElementById("previewResult");
-const counter = document.getElementById("counter");
-
-const newBtn = document.getElementById("newBtn");
-const sendBtn = document.getElementById("sendBtn");
-
-const status = document.getElementById("status");
-
-let selectedImage = null;
-let images = [];
-let lastImage = null;
-
-function showPreview(file) {
-  const url = URL.createObjectURL(file);
-  previewUpload.src = url;
-  previewUpload.classList.remove("hidden");
-}
-
-cameraInput.onchange = fileInput.onchange = (e) => {
-  const file = e.target.files[0];
+inputFile.addEventListener("change", () => {
+  const file = inputFile.files[0];
   if (!file) return;
 
-  selectedImage = file;
-  selectedFile.textContent = file.name;
-  showPreview(file);
-};
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    preview.src = e.target.result;
+    preview.style.display = "block";
+  };
+  reader.readAsDataURL(file);
+});
 
-form.onsubmit = async (e) => {
+form.addEventListener("submit", async (e) => {
   e.preventDefault();
 
-  if (!selectedImage) {
-    status.textContent = "Seleziona una foto";
-    return;
-  }
-
+  const file = inputFile.files[0];
   const codice = document.getElementById("codice").value;
-  const email = document.getElementById("email").value;
 
-  const data = new FormData();
-  data.append("image", selectedImage);
-  data.append("codice", codice);
-  data.append("email", email);
-
-  status.textContent = "Elaborazione...";
-
-  const res = await fetch("/process", {
-    method: "POST",
-    body: data
-  });
-
-  const json = await res.json();
-
-  if (!json.success) {
-    status.textContent = "Errore";
+  if (!file || !codice) {
+    alert("Compila tutti i campi");
     return;
   }
 
-  lastImage = json.filename;
+  const formData = new FormData();
+  formData.append("image", file);
+  formData.append("codice", codice);
 
-  if (!images.includes(lastImage)) {
-    images.push(lastImage);
+  try {
+    const res = await fetch("/upload", {
+      method: "POST",
+      body: formData
+    });
+
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+
+    resultImg.src = url;
+    resultImg.style.display = "block";
+
+    immaginiGenerate.push(blob);
+
+  } catch (err) {
+    console.error(err);
+    alert("Errore di connessione");
   }
+});
 
-  previewResult.src = json.imageUrl + "?t=" + Date.now();
-  result.classList.remove("hidden");
-
-  counter.textContent = `Immagini pronte: ${images.length}`;
-
-  status.textContent = "Immagine pronta";
-};
-
-newBtn.onclick = () => {
+document.getElementById("nuovaImg").addEventListener("click", () => {
   document.getElementById("codice").value = "";
-  selectedImage = null;
-  selectedFile.textContent = "Nessun file selezionato";
-  previewUpload.classList.add("hidden");
-  status.textContent = "";
-};
+  inputFile.value = "";
+  preview.style.display = "none";
+});
 
-sendBtn.onclick = async () => {
-  const email = document.getElementById("email").value;
+document.getElementById("inviaEmail").addEventListener("click", async () => {
+  const email = emailInput.value;
 
-  if (images.length === 0) {
-    status.textContent = "Nessuna immagine";
+  if (!email || immaginiGenerate.length === 0) {
+    alert("Nessuna immagine o email mancante");
     return;
   }
 
-  status.textContent = "Invio email...";
+  const formData = new FormData();
+  formData.append("email", email);
 
-  const res = await fetch("/send-email", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      email,
-      filenames: images
-    })
+  immaginiGenerate.forEach((img, i) => {
+    formData.append("images", img, `img_${i}.jpg`);
   });
 
-  const json = await res.json();
+  try {
+    await fetch("/send-multiple", {
+      method: "POST",
+      body: formData
+    });
 
-  if (!json.success) {
-    status.textContent = "Errore invio";
-    return;
+    alert("Email inviata!");
+    immaginiGenerate = [];
+
+  } catch (err) {
+    alert("Errore invio email");
   }
-
-  status.textContent = "Email inviata";
-
-  // reset tutto tranne email
-  images = [];
-  lastImage = null;
-  counter.textContent = "";
-  result.classList.add("hidden");
-};
+});
