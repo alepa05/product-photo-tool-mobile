@@ -30,19 +30,36 @@
         <input id="fileInput" type="file" accept="image/*" class="hidden">
 
         <div id="selectedFile">Nessun file selezionato</div>
+        <img id="previewUpload" class="preview-upload hidden" alt="Anteprima foto selezionata" />
 
-        <!-- 🔥 ANTEPRIMA -->
-        <img id="previewUpload" class="preview-upload hidden" />
-
-        <button type="submit">Genera e invia</button>
+        <button type="submit">Genera e salva</button>
       </form>
 
       <p id="status"></p>
 
       <div id="result" class="hidden">
         <h2>Risultato</h2>
-        <img id="preview" />
-        <a id="downloadLink">Scarica JPG</a>
+        <img id="preview" class="result-preview" alt="Risultato" />
+        <a id="downloadLink" class="download-btn">Scarica JPG</a>
+
+        <label class="checkbox-row">
+          <input type="checkbox" id="sendAllTogether" />
+          <span>Invia tutte le immagini generate insieme</span>
+        </label>
+
+        <div class="button-stack">
+          <button type="button" id="newImageBtn" class="secondary-action">
+            Genera nuova immagine
+          </button>
+          <button type="button" id="sendEmailBtn" class="primary-action">
+            Invia email
+          </button>
+        </div>
+      </div>
+
+      <div id="queueBox" class="queue-box hidden">
+        <strong>Immagini generate in attesa:</strong>
+        <div id="queueList"></div>
       </div>
     </div>
   </main>
