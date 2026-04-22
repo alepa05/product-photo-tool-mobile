@@ -155,7 +155,7 @@ app.post("/send-email", async (req, res) => {
         ? `Immagine ${filenames[0]}`
         : `Immagini generate (${filenames.length})`,
       text: filenames.length === 1
-        ? "Immagine generata automaticamente."
+        ? "File JPEG pronto."
         : `In allegato trovi ${filenames.length} immagini generate automaticamente.`,
       attachments,
     });
