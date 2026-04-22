@@ -1,5 +1,5 @@
 body {
-  font-family: Arial;
+  font-family: Arial, sans-serif;
   background: #f3f4f6;
   margin: 0;
 }
@@ -20,25 +20,33 @@ body {
 
 h1 {
   font-size: 40px;
+  margin: 0 0 16px;
 }
 
 .sub {
   color: #6b7280;
   margin-bottom: 20px;
+  font-size: 18px;
+  line-height: 1.4;
 }
 
 label {
   font-weight: bold;
   margin-top: 10px;
   display: block;
+  margin-bottom: 8px;
 }
 
-input {
+input[type="text"],
+input[type="email"],
+input:not(.file-input-hidden) {
   width: 100%;
   padding: 14px;
-  margin-bottom: 10px;
+  margin-bottom: 14px;
   border-radius: 10px;
   border: 1px solid #ccc;
+  box-sizing: border-box;
+  font-size: 16px;
 }
 
 .button-row {
@@ -47,16 +55,27 @@ input {
   margin-bottom: 10px;
 }
 
-.secondary {
+.secondary,
+.secondary-btn {
   flex: 1;
   background: #4b5563;
   color: white;
   text-align: center;
   padding: 14px;
   border-radius: 10px;
+  border: none;
+  font-size: 16px;
+  font-weight: 700;
+  cursor: pointer;
 }
 
-button {
+.file-trigger {
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+button,
+.download-btn {
   width: 100%;
   padding: 16px;
   border-radius: 10px;
@@ -64,13 +83,21 @@ button {
   color: white;
   border: none;
   margin-top: 10px;
+  font-size: 18px;
+  font-weight: 700;
+  cursor: pointer;
+  text-align: center;
+  text-decoration: none;
+  box-sizing: border-box;
 }
 
 .preview {
   width: 100%;
-  max-width: 200px;
+  max-width: 220px;
   margin-top: 10px;
   border-radius: 10px;
+  border: 1px solid #ccc;
+  display: block;
 }
 
 .result-img {
@@ -86,12 +113,15 @@ button {
   margin-top: 15px;
 }
 
-#counter {
-  margin-top: 10px;
-  font-size: 14px;
-  color: #555;
+.file-input-hidden {
+  position: absolute !important;
+  left: -9999px !important;
+  width: 1px !important;
+  height: 1px !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
 }
 
 .hidden {
-  display: none;
+  display: none !important;
 }
