@@ -1,12 +1,13 @@
 const express = require("express");
 const multer = require("multer");
-const axios = require("axios");
-const FormData = require("form-data");
-const sharp = require("sharp");
 const archiver = require("archiver");
 const fs = require("fs");
 const path = require("path");
 const cors = require("cors");
+const { execFile } = require("child_process");
+const { promisify } = require("util");
+
+const execFileAsync = promisify(execFile);
 
 const app = express();
 
@@ -38,31 +39,12 @@ function sanitizeSession(value) {
   return sanitizeFilename(value || `session_${Date.now()}`);
 }
 
-async function removeBackground(imagePath) {
-  const apiKey = process.env.REMOVE_BG_API_KEY;
+async function removeBackgroundLocal(inputPath, outputPath) {
+  const scriptPath = path.join(__dirname, "remove_bg.py");
 
-  if (!apiKey) {
-    throw new Error("REMOVE_BG_API_KEY mancante");
-  }
-
-  const formData = new FormData();
-  formData.append("image_file", fs.createReadStream(imagePath));
-  formData.append("size", "auto");
-
-  const response = await axios.post(
-    "https://api.remove.bg/v1.0/removebg",
-    formData,
-    {
-      responseType: "arraybuffer",
-      headers: {
-        ...formData.getHeaders(),
-        "X-Api-Key": apiKey
-      },
-      maxBodyLength: Infinity
-    }
-  );
-
-  return Buffer.from(response.data);
+  await execFileAsync("python3", [scriptPath, inputPath, outputPath], {
+    timeout: 180000
+  });
 }
 
 app.get("/", (req, res) => {
@@ -89,17 +71,7 @@ app.post("/process", upload.single("image"), async (req, res) => {
     const outputFilename = `${codice}.jpg`;
     const outputPath = path.join(sessionDir, outputFilename);
 
-    const noBgBuffer = await removeBackground(inputPath);
-
-    await sharp(noBgBuffer)
-      .rotate()
-      .resize(1800, 1800, {
-        fit: "contain",
-        background: { r: 255, g: 255, b: 255, alpha: 1 }
-      })
-      .flatten({ background: { r: 255, g: 255, b: 255 } })
-      .jpeg({ quality: 95, mozjpeg: true })
-      .toFile(outputPath);
+    await removeBackgroundLocal(inputPath, outputPath);
 
     fs.unlink(inputPath, () => {});
 
@@ -114,11 +86,7 @@ app.post("/process", upload.single("image"), async (req, res) => {
       count: files.length
     });
   } catch (error) {
-    if (error.response?.data) {
-  console.error("Errore /process:", Buffer.from(error.response.data).toString("utf8"));
-} else {
-  console.error("Errore /process:", error.message || error);
-}
+    console.error("Errore /process:", error.stderr || error.message || error);
 
     return res.status(500).json({
       success: false,
