@@ -10,14 +10,11 @@
   <main class="wrap">
     <div class="card">
       <h1>Scontorno Automatico</h1>
-      <p class="sub">Scatta o carica una foto, genera il JPG e invialo via Gmail.</p>
+      <p class="sub">Scatta o carica una foto, rimuovi lo sfondo e scarica tutto in ZIP.</p>
 
       <form id="uploadForm">
         <label>Codice articolo</label>
         <input id="codice" required />
-
-        <label>Email destinatario</label>
-        <input id="email" type="email" required />
 
         <div class="button-row">
           <label for="cameraInput" class="secondary file-trigger">Scatta foto</label>
@@ -36,22 +33,23 @@
       <p id="status"></p>
 
       <div id="result" class="hidden">
-        <h2>Risultato</h2>
+        <h2>Ultima immagine</h2>
         <img id="previewResult" class="result-img" alt="Risultato">
-        <a id="downloadLink" class="download-btn">Scarica JPG</a>
+        <p id="counter">Immagini pronte: 0</p>
 
         <div class="actions">
-          <button type="button" id="sendBtn">Invia email</button>
           <button type="button" id="newBtn" class="secondary-btn">Nuova immagine</button>
+          <button type="button" id="zipBtn">Scarica ZIP</button>
+          <button type="button" id="resetBtn" class="light-btn">Reset pacchetto</button>
         </div>
       </div>
     </div>
   </main>
 
-<footer class="footer">
-  Developed by Alessandro Paglietta
-</footer>
+  <footer class="footer">
+    Developed by Alessandro Paglietta
+  </footer>
 
-<script src="/app.js"></script>
+  <script src="/app.js"></script>
 </body>
 </html>
