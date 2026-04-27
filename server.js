@@ -114,7 +114,11 @@ app.post("/process", upload.single("image"), async (req, res) => {
       count: files.length
     });
   } catch (error) {
-    console.error("Errore /process:", error.response?.data || error.message || error);
+    if (error.response?.data) {
+  console.error("Errore /process:", Buffer.from(error.response.data).toString("utf8"));
+} else {
+  console.error("Errore /process:", error.message || error);
+}
 
     return res.status(500).json({
       success: false,
