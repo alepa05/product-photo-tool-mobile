@@ -1,24 +1,29 @@
 const form = document.getElementById("uploadForm");
 const cameraInput = document.getElementById("cameraInput");
 const fileInput = document.getElementById("fileInput");
+
 const selectedFile = document.getElementById("selectedFile");
 const previewUpload = document.getElementById("previewUpload");
 
 const result = document.getElementById("result");
 const previewResult = document.getElementById("previewResult");
-const downloadLink = document.getElementById("downloadLink");
+const counter = document.getElementById("counter");
 
 const newBtn = document.getElementById("newBtn");
-const sendBtn = document.getElementById("sendBtn");
+const zipBtn = document.getElementById("zipBtn");
+const resetBtn = document.getElementById("resetBtn");
 
 const status = document.getElementById("status");
-
 const codiceInput = document.getElementById("codice");
-const emailInput = document.getElementById("email");
 
 let selectedImage = null;
-let currentFilename = null;
-let currentImageUrl = null;
+let imageCount = 0;
+
+let sessionId = localStorage.getItem("scontornoSessionId");
+if (!sessionId) {
+  sessionId = "session_" + Date.now() + "_" + Math.random().toString(36).slice(2);
+  localStorage.setItem("scontornoSessionId", sessionId);
+}
 
 function showPreview(file) {
   if (!file) return;
@@ -35,7 +40,6 @@ function handleSelectedFile(file) {
   showPreview(file);
 }
 
-// Fix iPhone/Safari
 cameraInput.addEventListener("click", () => {
   cameraInput.value = "";
 });
@@ -54,11 +58,9 @@ fileInput.addEventListener("change", (e) => {
   handleSelectedFile(file);
 });
 
-function resetForNextImage() {
+function resetFormOnly() {
   codiceInput.value = "";
   selectedImage = null;
-  currentFilename = null;
-  currentImageUrl = null;
 
   cameraInput.value = "";
   fileInput.value = "";
@@ -67,10 +69,6 @@ function resetForNextImage() {
 
   previewUpload.src = "";
   previewUpload.classList.add("hidden");
-
-  previewResult.src = "";
-  downloadLink.href = "";
-  result.classList.add("hidden");
 
   status.textContent = "";
   codiceInput.focus();
@@ -85,22 +83,16 @@ form.addEventListener("submit", async (e) => {
   }
 
   const codice = codiceInput.value.trim();
-  const email = emailInput.value.trim();
 
   if (!codice) {
     status.textContent = "Inserisci il codice articolo";
     return;
   }
 
-  if (!email) {
-    status.textContent = "Inserisci l'email destinatario";
-    return;
-  }
-
   const data = new FormData();
   data.append("image", selectedImage);
   data.append("codice", codice);
-  data.append("email", email);
+  data.append("sessionId", sessionId);
 
   status.textContent = "Elaborazione...";
 
@@ -112,20 +104,18 @@ form.addEventListener("submit", async (e) => {
 
     const json = await res.json();
 
-    if (!json.success) {
+    if (!res.ok || !json.success) {
       status.textContent = json.error || "Errore";
       return;
     }
 
-    currentFilename = json.filename;
-    currentImageUrl = json.imageUrl;
+    imageCount = json.count || imageCount + 1;
 
     previewResult.src = json.imageUrl + "?t=" + Date.now();
-    downloadLink.href = json.imageUrl + "?t=" + Date.now();
-    downloadLink.download = json.filename;
-
+    counter.textContent = `Immagini pronte: ${imageCount}`;
     result.classList.remove("hidden");
-    status.textContent = "Immagine pronta";
+
+    status.textContent = "Immagine aggiunta al pacchetto ZIP";
   } catch (err) {
     console.error(err);
     status.textContent = "Errore di connessione";
@@ -133,49 +123,46 @@ form.addEventListener("submit", async (e) => {
 });
 
 newBtn.addEventListener("click", () => {
-  resetForNextImage();
+  resetFormOnly();
 });
 
-sendBtn.addEventListener("click", async () => {
-  const email = emailInput.value.trim();
-
-  if (!email) {
-    status.textContent = "Inserisci l'email destinatario";
+zipBtn.addEventListener("click", () => {
+  if (imageCount === 0) {
+    status.textContent = "Nessuna immagine da scaricare";
     return;
   }
 
-  if (!currentFilename) {
-    status.textContent = "Nessuna immagine da inviare";
-    return;
-  }
+  window.location.href = `/download-zip/${sessionId}`;
 
-  status.textContent = "Invio email...";
+  setTimeout(() => {
+    localStorage.removeItem("scontornoSessionId");
+    sessionId = "session_" + Date.now() + "_" + Math.random().toString(36).slice(2);
+    localStorage.setItem("scontornoSessionId", sessionId);
 
-  try {
-    const res = await fetch("/send-email", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({
-        email,
-        filenames: [currentFilename]
-      })
-    });
+    imageCount = 0;
+    counter.textContent = "Immagini pronte: 0";
+    result.classList.add("hidden");
+    resetFormOnly();
+    status.textContent = "Pacchetto ZIP scaricato. Nuova sessione pronta.";
+  }, 1500);
+});
 
-    const json = await res.json();
+resetBtn.addEventListener("click", async () => {
+  await fetch("/reset-session", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({ sessionId })
+  });
 
-    if (!json.success) {
-      status.textContent = json.error || "Errore invio";
-      return;
-    }
+  localStorage.removeItem("scontornoSessionId");
+  sessionId = "session_" + Date.now() + "_" + Math.random().toString(36).slice(2);
+  localStorage.setItem("scontornoSessionId", sessionId);
 
-    status.textContent = "Email inviata";
-    const emailToKeep = emailInput.value;
-    resetForNextImage();
-    emailInput.value = emailToKeep;
-  } catch (err) {
-    console.error(err);
-    status.textContent = "Errore invio";
-  }
+  imageCount = 0;
+  counter.textContent = "Immagini pronte: 0";
+  result.classList.add("hidden");
+  resetFormOnly();
+  status.textContent = "Pacchetto azzerato";
 });
