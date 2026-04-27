@@ -153,3 +153,6 @@ app.post("/reset-session", (req, res) => {
 app.listen(PORT, () => {
   console.log(`Server attivo su porta ${PORT}`);
 });
+app.listen(process.env.PORT || 10000, () => {
+  console.log("Server attivo");
+});
