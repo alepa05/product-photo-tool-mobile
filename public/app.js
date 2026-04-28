@@ -1,4 +1,5 @@
 const form = document.getElementById("uploadForm");
+
 const cameraInput = document.getElementById("cameraInput");
 const fileInput = document.getElementById("fileInput");
 
@@ -20,149 +21,233 @@ let selectedImage = null;
 let imageCount = 0;
 
 let sessionId = localStorage.getItem("scontornoSessionId");
+
 if (!sessionId) {
-  sessionId = "session_" + Date.now() + "_" + Math.random().toString(36).slice(2);
+  sessionId =
+    "session_" +
+    Date.now() +
+    "_" +
+    Math.random().toString(36).slice(2);
+
   localStorage.setItem("scontornoSessionId", sessionId);
 }
 
 function showPreview(file) {
   if (!file) return;
+
   const url = URL.createObjectURL(file);
+
   previewUpload.src = url;
   previewUpload.classList.remove("hidden");
 }
 
-function handleSelectedFile(file) {
+async function convertToJpg(file) {
+  return new Promise((resolve, reject) => {
+
+    const img = new Image();
+    const url = URL.createObjectURL(file);
+
+    img.onload = () => {
+
+      const canvas = document.createElement("canvas");
+
+      canvas.width = img.width;
+      canvas.height = img.height;
+
+      const ctx = canvas.getContext("2d");
+
+      ctx.drawImage(img, 0, 0);
+
+      canvas.toBlob(
+        (blob) => {
+
+          URL.revokeObjectURL(url);
+
+          if (!blob) {
+            reject(new Error("Conversione fallita"));
+            return;
+          }
+
+          const jpgFile = new File(
+            [blob],
+            "image.jpg",
+            {
+              type: "image/jpeg"
+            }
+          );
+
+          resolve(jpgFile);
+
+        },
+        "image/jpeg",
+        0.9
+      );
+
+    };
+
+    img.onerror = () => {
+      reject(new Error("Errore immagine"));
+    };
+
+    img.src = url;
+
+  });
+}
+
+async function handleSelectedFile(file) {
+
   if (!file) return;
 
-  selectedImage = file;
-  selectedFile.textContent = `Selezionato: ${file.name || "immagine"}`;
-  showPreview(file);
+  try {
+
+    status.textContent = "Preparazione immagine...";
+
+    selectedImage = await convertToJpg(file);
+
+    selectedFile.textContent =
+      "Selezionato: image.jpg";
+
+    showPreview(selectedImage);
+
+    status.textContent = "";
+
+  } catch (err) {
+
+    console.error(err);
+
+    status.textContent =
+      "Errore preparazione immagine";
+
+  }
+
 }
 
-cameraInput.addEventListener("click", () => {
-  cameraInput.value = "";
+cameraInput.addEventListener("change", async (e) => {
+  await handleSelectedFile(e.target.files[0]);
 });
 
-fileInput.addEventListener("click", () => {
-  fileInput.value = "";
+fileInput.addEventListener("change", async (e) => {
+  await handleSelectedFile(e.target.files[0]);
 });
-
-cameraInput.addEventListener("change", (e) => {
-  const file = e.target.files && e.target.files[0];
-  handleSelectedFile(file);
-});
-
-fileInput.addEventListener("change", (e) => {
-  const file = e.target.files && e.target.files[0];
-  handleSelectedFile(file);
-});
-
-function resetFormOnly() {
-  codiceInput.value = "";
-  selectedImage = null;
-
-  cameraInput.value = "";
-  fileInput.value = "";
-
-  selectedFile.textContent = "Nessun file selezionato";
-
-  previewUpload.src = "";
-  previewUpload.classList.add("hidden");
-
-  status.textContent = "";
-  codiceInput.focus();
-}
 
 form.addEventListener("submit", async (e) => {
+
   e.preventDefault();
 
   if (!selectedImage) {
-    status.textContent = "Seleziona una foto";
+    status.textContent =
+      "Seleziona una foto";
     return;
   }
 
   const codice = codiceInput.value.trim();
 
   if (!codice) {
-    status.textContent = "Inserisci il codice articolo";
+    status.textContent =
+      "Inserisci il codice articolo";
     return;
   }
 
   const data = new FormData();
+
   data.append("image", selectedImage);
   data.append("codice", codice);
   data.append("sessionId", sessionId);
 
-  status.textContent = "Elaborazione...";
+  status.textContent =
+    "Elaborazione...";
 
   try {
+
+    console.log("Invio richiesta");
+
     const res = await fetch("/process", {
       method: "POST",
       body: data
     });
 
+    console.log(res);
+
     const json = await res.json();
 
     if (!res.ok || !json.success) {
-      status.textContent = json.error || "Errore";
+
+      status.textContent =
+        json.error || "Errore";
+
       return;
     }
 
-    imageCount = json.count || imageCount + 1;
+    imageCount =
+      json.count || imageCount + 1;
 
-    previewResult.src = json.imageUrl + "?t=" + Date.now();
-    counter.textContent = `Immagini pronte: ${imageCount}`;
+    previewResult.src =
+      json.imageUrl +
+      "?t=" +
+      Date.now();
+
+    counter.textContent =
+      `Immagini pronte: ${imageCount}`;
+
     result.classList.remove("hidden");
 
-    status.textContent = "Immagine aggiunta al pacchetto ZIP";
+    status.textContent =
+      "Immagine aggiunta al pacchetto ZIP";
+
   } catch (err) {
+
     console.error(err);
-    status.textContent = "Errore di connessione";
+
+    status.textContent =
+      "Errore di connessione";
+
   }
+
 });
 
 newBtn.addEventListener("click", () => {
-  resetFormOnly();
-});
 
-zipBtn.addEventListener("click", () => {
-  if (imageCount === 0) {
-    status.textContent = "Nessuna immagine da scaricare";
-    return;
-  }
+  codiceInput.value = "";
 
-  window.location.href = `/download-zip/${sessionId}`;
+  selectedImage = null;
 
-  setTimeout(() => {
-    localStorage.removeItem("scontornoSessionId");
-    sessionId = "session_" + Date.now() + "_" + Math.random().toString(36).slice(2);
-    localStorage.setItem("scontornoSessionId", sessionId);
+  previewUpload.src = "";
 
-    imageCount = 0;
-    counter.textContent = "Immagini pronte: 0";
-    result.classList.add("hidden");
-    resetFormOnly();
-    status.textContent = "Pacchetto ZIP scaricato. Nuova sessione pronta.";
-  }, 1500);
+  previewUpload.classList.add("hidden");
+
+  selectedFile.textContent =
+    "Nessun file selezionato";
+
+  status.textContent = "";
+
 });
 
 resetBtn.addEventListener("click", async () => {
+
   await fetch("/reset-session", {
     method: "POST",
     headers: {
       "Content-Type": "application/json"
     },
-    body: JSON.stringify({ sessionId })
+    body: JSON.stringify({
+      sessionId
+    })
   });
 
-  localStorage.removeItem("scontornoSessionId");
-  sessionId = "session_" + Date.now() + "_" + Math.random().toString(36).slice(2);
-  localStorage.setItem("scontornoSessionId", sessionId);
-
   imageCount = 0;
-  counter.textContent = "Immagini pronte: 0";
+
   result.classList.add("hidden");
-  resetFormOnly();
-  status.textContent = "Pacchetto azzerato";
+
+  counter.textContent = "";
+
+  status.textContent =
+    "Sessione resettata";
+
+});
+
+zipBtn.addEventListener("click", () => {
+
+  window.location.href =
+    `/download-zip?sessionId=${sessionId}`;
+
 });
