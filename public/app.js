@@ -248,6 +248,6 @@ resetBtn.addEventListener("click", async () => {
 zipBtn.addEventListener("click", () => {
 
   window.location.href =
-    `/download-zip?sessionId=${sessionId}`;
+    `/download-zip/${sessionId}`;
 
 });
