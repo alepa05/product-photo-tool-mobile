@@ -5,23 +5,47 @@ import sys
 input_path = sys.argv[1]
 output_path = sys.argv[2]
 
+# apertura immagine
 img = Image.open(input_path)
 img = ImageOps.exif_transpose(img)
 
+# rimozione sfondo
 out = remove(img).convert("RGBA")
 
-white_bg = Image.new("RGBA", out.size, (255, 255, 255, 255))
-white_bg.paste(out, (0, 0), out)
+# trova il bordo reale del prodotto
+bbox = out.getbbox()
 
-rgb = white_bg.convert("RGB")
+if bbox:
+    out = out.crop(bbox)
 
+# canvas fisso
 canvas_size = 1800
-canvas = Image.new("RGB", (canvas_size, canvas_size), (255, 255, 255))
 
-rgb.thumbnail((canvas_size, canvas_size), Image.LANCZOS)
+# ridimensiona il prodotto
+max_product_size = int(canvas_size * 0.8)
 
-x = (canvas_size - rgb.width) // 2
-y = (canvas_size - rgb.height) // 2
+out.thumbnail(
+    (max_product_size, max_product_size),
+    Image.LANCZOS
+)
 
-canvas.paste(rgb, (x, y))
-canvas.save(output_path, "JPEG", quality=95)
+# sfondo bianco
+canvas = Image.new(
+    "RGB",
+    (canvas_size, canvas_size),
+    (255, 255, 255)
+)
+
+# centra prodotto
+x = (canvas_size - out.width) // 2
+y = (canvas_size - out.height) // 2
+
+# incolla mantenendo trasparenza
+canvas.paste(out, (x, y), out)
+
+# salva finale
+canvas.save(
+    output_path,
+    "JPEG",
+    quality=95
+)
